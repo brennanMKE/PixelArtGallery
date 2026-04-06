@@ -1,0 +1,24 @@
+# Text files
+*.swift text eol=lf
+*.sh text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.plist text eol=lf
+*.strings text eol=lf
+*.pbxproj merge=union
+*.gitignore text eol=lf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.pdf binary
+*.zip binary
+*.xcassets binary
+
+# Exclude files from export archives
+.gitattributes export-ignore
+.gitignore export-ignore

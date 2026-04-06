@@ -1,0 +1,50 @@
+# Xcode
+build/
+DerivedData/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/xcshareddata/xcschemes/
+*.playground
+*.xcworkspace/xcuserdata/
+*.xcworkspace/xcshareddata/
+
+# Swift Package Manager
+.build/
+.swiftpm/xcode/package.xcworkspace/xcuserdata/
+*.xcframework
+
+# IDE
+.DS_Store
+.swiftformat
+.swiftlint.yml
+
+# Xcode
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+*.xcworkspace
+
+# Simulator
+.simulator/
+
+# Build
+.ipa
+.app
+
+# CocoaPods
+Pods/
+Podfile.lock
+
+# Carthage
+Carthage/Build/
+
+# Coverage
+*.gcda
+*.gcno
+coverage/
+
+# Misc
+.env
+.env.local
+*.log
+.vscode/
