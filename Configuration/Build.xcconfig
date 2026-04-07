@@ -1,0 +1,11 @@
+
+INFOPLIST_KEY_CFBundleDisplayName = Pixel Art Gallery
+
+#include? "macOS.xcconfig"
+#include? "iOS.xcconfig"
+
+SWIFT_VERSION = 6.0
+
+INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Saves exported pixel art images to your photo library."
+
+SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor
