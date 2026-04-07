@@ -1,0 +1,70 @@
+import Foundation
+import SwiftData
+
+/// Represents a Flaschen Taschen LED display discovered on the local network or added manually.
+/// Stores both connection information (host/port) and display capabilities (dimensions)
+/// for creating variants at appropriate sizes and sending pixelated images directly to the display.
+@Model
+public final class FlaschenTaschenDisplay {
+    /// Unique identifier for this display entry
+    @Attribute(.unique) public var id: UUID
+
+    /// Hostname or IP address of the display
+    var host: String
+
+    /// Service port of the display
+    var port: Int
+
+    /// User-friendly display name (e.g., "Office Wall", "Break Room")
+    var displayName: String
+
+    /// Native pixel width of the display
+    var displayWidth: Int
+
+    /// Native pixel height of the display
+    var displayHeight: Int
+
+    /// Timestamp when this display was discovered or added
+    var discoveredDate: Date
+
+    /// Source of this display entry: "mdns" (discovered via mDNS) or "manual" (user-entered)
+    var source: String // "mdns" or "manual"
+
+    /// Initialize a new FT display entry
+    /// - Parameters:
+    ///   - host: Hostname or IP address
+    ///   - port: Display service port
+    ///   - displayName: User-friendly name
+    ///   - displayWidth: Display width in pixels
+    ///   - displayHeight: Display height in pixels
+    ///   - discoveredDate: Timestamp of discovery/creation (defaults to now)
+    ///   - source: "mdns" or "manual"
+    init(
+        host: String,
+        port: Int,
+        displayName: String,
+        displayWidth: Int,
+        displayHeight: Int,
+        discoveredDate: Date = Date(),
+        source: String = "manual"
+    ) {
+        self.id = UUID()
+        self.host = host
+        self.port = port
+        self.displayName = displayName
+        self.displayWidth = displayWidth
+        self.displayHeight = displayHeight
+        self.discoveredDate = discoveredDate
+        self.source = source
+    }
+
+    /// Computed property for a user-friendly endpoint description
+    var endpoint: String {
+        "\(host):\(port)"
+    }
+
+    /// Computed property for display resolution description
+    var resolution: String {
+        "\(displayWidth)×\(displayHeight)"
+    }
+}
