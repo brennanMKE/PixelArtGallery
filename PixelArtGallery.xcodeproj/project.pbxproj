@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		26F0B85E2F84B99600840980 /* PixelArtGalleryKit in Frameworks */ = {isa = PBXBuildFile; productRef = 26F0B85D2F84B99600840980 /* PixelArtGalleryKit */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		26F0B8442F84779A00840980 /* PixelArtGallery.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PixelArtGallery.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		26F0B8522F847C4200840980 /* Build.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Build.xcconfig; sourceTree = "<group>"; };
@@ -26,6 +30,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				26F0B85E2F84B99600840980 /* PixelArtGalleryKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -79,6 +84,7 @@
 			);
 			name = PixelArtGallery;
 			packageProductDependencies = (
+				26F0B85D2F84B99600840980 /* PixelArtGalleryKit */,
 			);
 			productName = PixelArtGallery;
 			productReference = 26F0B8442F84779A00840980 /* PixelArtGallery.app */;
@@ -108,6 +114,9 @@
 			);
 			mainGroup = 26F0B83B2F84779A00840980;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				26F0B85C2F84B99600840980 /* XCLocalSwiftPackageReference "PixelArtGalleryKit" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 26F0B8452F84779A00840980 /* Products */;
 			projectDirPath = "";
@@ -271,7 +280,6 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "Pixel Art Gallery";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "\"Saves exported pixel art images to your photo library.\"";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
@@ -309,7 +317,6 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "Pixel Art Gallery";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "\"Saves exported pixel art images to your photo library.\"";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
@@ -355,6 +362,20 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		26F0B85C2F84B99600840980 /* XCLocalSwiftPackageReference "PixelArtGalleryKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = PixelArtGalleryKit;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		26F0B85D2F84B99600840980 /* PixelArtGalleryKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = PixelArtGalleryKit;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 26F0B83C2F84779A00840980 /* Project object */;
 }
