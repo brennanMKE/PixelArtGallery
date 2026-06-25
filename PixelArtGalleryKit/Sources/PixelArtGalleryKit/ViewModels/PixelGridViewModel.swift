@@ -47,6 +47,28 @@ final class PixelGridViewModel {
         selectedPixel = (x, y)
     }
 
+    /// Map a point in the Canvas's coordinate space to grid coordinates,
+    /// accounting for the current zoom level. Returns nil if the point falls
+    /// outside the grid bounds.
+    func gridCoordinate(at point: CGPoint) -> (x: Int, y: Int)? {
+        let cellSize = pixelSize * zoomLevel
+        guard cellSize > 0, point.x >= 0, point.y >= 0 else { return nil }
+        let x = Int(point.x / cellSize)
+        let y = Int(point.y / cellSize)
+        guard x >= 0, x < gridWidth, y >= 0, y < gridHeight else { return nil }
+        return (x, y)
+    }
+
+    /// Select the pixel under a Canvas-space point. Clears the selection when
+    /// the point lies outside the grid.
+    func selectPixel(at point: CGPoint) {
+        if let coord = gridCoordinate(at: point) {
+            selectPixel(x: coord.x, y: coord.y)
+        } else {
+            clearSelection()
+        }
+    }
+
     func clearSelection() {
         selectedPixel = nil
     }

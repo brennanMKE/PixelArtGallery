@@ -20,12 +20,33 @@ struct PixelGridView: View {
 
     var body: some View {
         VStack {
+            // Selected-pixel readout
+            selectionReadout
+
             // Canvas grid
             ScrollView([.horizontal, .vertical]) {
                 Canvas { context, size in
                     drawPixelGrid(in: &context)
                 }
                 .frame(width: viewModel.displaySize.width, height: viewModel.displaySize.height)
+                #if os(iOS)
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onEnded { value in
+                            viewModel.selectPixel(at: value.location)
+                        }
+                )
+                #elseif os(macOS)
+                .onContinuousHover { phase in
+                    switch phase {
+                    case .active(let location):
+                        viewModel.selectPixel(at: location)
+                    case .ended:
+                        viewModel.clearSelection()
+                    }
+                }
+                #endif
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color.black.opacity(0.05))
@@ -58,6 +79,42 @@ struct PixelGridView: View {
         #endif
     }
 
+    /// Readout showing the coordinate and RGBA value of the selected pixel.
+    @ViewBuilder
+    private var selectionReadout: some View {
+        HStack(spacing: 12) {
+            if let selected = viewModel.selectedPixel {
+                let color = viewModel.pixelColor(x: selected.x, y: selected.y)
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(Color(
+                        red: Double(color.red) / 255.0,
+                        green: Double(color.green) / 255.0,
+                        blue: Double(color.blue) / 255.0,
+                        opacity: Double(color.alpha) / 255.0
+                    ))
+                    .frame(width: 20, height: 20)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 3)
+                            .stroke(Color.gray.opacity(0.5), lineWidth: 0.5)
+                    )
+                Text("(\(selected.x), \(selected.y))")
+                    .font(.system(.body, design: .monospaced))
+                Text("RGBA \(color.red), \(color.green), \(color.blue), \(color.alpha)")
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("No pixel selected")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity)
+        .background(Color.gray.opacity(0.08))
+    }
+
     private func drawPixelGrid(in context: inout GraphicsContext) {
         let pixelSize = viewModel.pixelSize * viewModel.zoomLevel
 
@@ -86,6 +143,19 @@ struct PixelGridView: View {
                 path = Path(roundedRect: rect, cornerRadius: 0)
                 context.stroke(path, with: .color(.gray.opacity(0.3)), lineWidth: 0.5)
             }
+        }
+
+        // Highlight the selected cell on top of the grid
+        if let selected = viewModel.selectedPixel {
+            let rect = CGRect(
+                x: CGFloat(selected.x) * pixelSize,
+                y: CGFloat(selected.y) * pixelSize,
+                width: pixelSize,
+                height: pixelSize
+            )
+            let highlight = Path(roundedRect: rect, cornerRadius: 0)
+            context.stroke(highlight, with: .color(.yellow), lineWidth: max(2, pixelSize * 0.1))
+            context.stroke(highlight, with: .color(.black), lineWidth: 1)
         }
     }
 }
