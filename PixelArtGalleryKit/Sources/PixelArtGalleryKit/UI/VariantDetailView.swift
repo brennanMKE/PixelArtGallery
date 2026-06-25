@@ -72,17 +72,8 @@ struct VariantDetailView: View {
                     .disabled(isExporting || isSending)
                 }
                 .sheet(isPresented: $showExportPicker) {
-                    // Create mock variant for export picker
-                    let mockVariant = MockVariant(
-                        id: UUID(),
-                        width: variant.targetWidth,
-                        height: variant.targetHeight,
-                        createdDate: variant.createdDate,
-                        exportFormat: selectedExportFormat
-                    )
-
                     ExportPickerView(
-                        variant: mockVariant,
+                        variant: variant,
                         onExport: { format, url in
                             handleExport(format: format, url: url)
                         },
@@ -165,25 +156,19 @@ struct VariantDetailView: View {
         #endif
     }
 
+    /// Called by `ExportPickerView` after it has already written the file to `url`.
+    /// Records the last-used format on the variant and surfaces a success message.
     private func handleExport(format: String, url: URL) {
-        isExporting = true
         errorMessage = nil
-        successMessage = nil
+        variant.exportFormat = format
+        showExportPicker = false
+        successMessage = "Exported \(format) to \(url.lastPathComponent)"
+        Self.logger.info("Export completed successfully: \(format) -> \(url.lastPathComponent)")
 
-        Self.logger.debug("Starting export: format=\(format), path=\(url.path)")
-
-        // Simulate export operation - in real implementation would call VariantExporter
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            isExporting = false
-            showExportPicker = false
-            successMessage = "Exported \(format) to \(url.lastPathComponent)"
-            Self.logger.info("Export completed successfully")
-
-            // Clear success message after 3 seconds
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-                withAnimation {
-                    successMessage = nil
-                }
+        // Clear success message after 3 seconds
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+            withAnimation {
+                successMessage = nil
             }
         }
     }

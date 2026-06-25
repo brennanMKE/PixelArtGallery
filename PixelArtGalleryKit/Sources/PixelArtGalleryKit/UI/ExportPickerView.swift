@@ -7,9 +7,11 @@ import UniformTypeIdentifiers
 
 /// View for exporting pixel art variants with format selection and file location picker
 struct ExportPickerView: View {
-    let variant: MockVariant
+    let variant: Variant
     let onExport: (String, URL) -> Void
     let onCancel: () -> Void
+
+    private let exporter = VariantExporter()
 
     @State private var selectedFormat = "PNG"
     @State private var isShowingSavePanel = false
@@ -45,7 +47,7 @@ struct ExportPickerView: View {
                 Text("Export Variant")
                     .font(.title2)
                     .fontWeight(.semibold)
-                Text("Variant: \(variant.width)×\(variant.height)")
+                Text("Variant: \(variant.targetWidth)×\(variant.targetHeight)")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
@@ -178,7 +180,7 @@ struct ExportPickerView: View {
         DispatchQueue.main.async {
             let panel = NSSavePanel()
             panel.allowedContentTypes = [uniformTypeForFormat()]
-            panel.nameFieldStringValue = "variant-\(variant.id).\(fileExtension)"
+            panel.nameFieldStringValue = "variant-\(variant.id.uuidString.prefix(8)).\(fileExtension)"
             panel.message = "Choose a location to save your pixelated image"
 
             panel.begin { response in
@@ -199,17 +201,63 @@ struct ExportPickerView: View {
             exportError = "Please select a save location"
             return
         }
+        guard let format = ExportFormat(name: selectedFormat) else {
+            exportError = "Unsupported format: \(selectedFormat)"
+            return
+        }
 
         isExporting = true
         exportError = nil
 
         Self.logger.debug("Exporting variant \(self.variant.id) as \(self.selectedFormat) to \(fileURL.path)")
 
-        // Simulate export delay (in real implementation, this would call VariantExporter)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            isExporting = false
-            onExport(selectedFormat, fileURL)
-            Self.logger.info("Export completed: \(self.selectedFormat)")
+        // The exporter is nonisolated and pure; encode the file bytes off the main actor
+        // by reading the variant's plain fields first (Variant is @Model / main-actor bound,
+        // so it cannot itself cross actor boundaries).
+        let exporter = self.exporter
+        let width = variant.targetWidth
+        let height = variant.targetHeight
+        let pixelData = variant.pixelGridData
+        let scaleFactor = variant.scaleFactor
+
+        Task {
+            do {
+                try await Task.detached {
+                    try exporter.export(
+                        width: width,
+                        height: height,
+                        pixelGridData: pixelData,
+                        scaleFactor: scaleFactor,
+                        as: format,
+                        to: fileURL
+                    )
+                }.value
+                isExporting = false
+                Self.logger.info("Export completed: \(self.selectedFormat)")
+                onExport(selectedFormat, fileURL)
+            } catch {
+                isExporting = false
+                let message = (error as? ExportError).map(Self.describe) ?? error.localizedDescription
+                exportError = message
+                Self.logger.error("Export failed: \(message)")
+            }
+        }
+    }
+
+    private static func describe(_ error: ExportError) -> String {
+        switch error {
+        case .invalidPixelData(let expected, let actual):
+            return "Invalid pixel data (expected \(expected) bytes, got \(actual))."
+        case .invalidDimensions(let width, let height):
+            return "Invalid dimensions (\(width)×\(height))."
+        case .imageCreationFailed:
+            return "Could not create the image."
+        case .encodingFailed(let format):
+            return "Could not encode \(format)."
+        case .serializationFailed:
+            return "Could not serialize the color matrix."
+        case .writeFailed(let underlying):
+            return "Could not write the file: \(underlying)"
         }
     }
 
@@ -232,8 +280,14 @@ struct ExportPickerView: View {
 }
 
 #Preview {
+    let sampleVariant = Variant(
+        targetWidth: 32,
+        targetHeight: 32,
+        pixelGridData: PixelGrid(width: 32, height: 32).toRGBA8888()
+    )
+
     ExportPickerView(
-        variant: MockVariant.samples[0],
+        variant: sampleVariant,
         onExport: { format, url in
             print("Export \(format) to \(url)")
         },
