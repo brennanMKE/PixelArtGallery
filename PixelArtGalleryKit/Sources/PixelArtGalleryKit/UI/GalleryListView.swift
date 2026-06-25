@@ -1,11 +1,13 @@
 import SwiftUI
 
 /// Displays a list of all gallery items with preview thumbnails
-struct GalleryListView: View {
+public struct GalleryListView: View {
     @State private var coordinator = GalleryCoordinator()
     @Environment(\.horizontalSizeClass) var horizontalSizeClass
 
-    var body: some View {
+    public init() {}
+
+    public var body: some View {
         NavigationStack {
             Group {
                 if coordinator.galleryItems.isEmpty {
