@@ -6,9 +6,20 @@ import SwiftData
 import os.log
 
 /// Errors raised by the gallery coordinator's persistence operations.
-nonisolated enum GalleryCoordinatorError: Error, Equatable {
+nonisolated enum GalleryCoordinatorError: LocalizedError, Equatable {
     /// A mutation was requested before a SwiftData `ModelContext` was injected.
     case missingModelContext
+    /// The original image bytes for a gallery item could not be found on disk.
+    case originalImageMissing(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .missingModelContext:
+            return "No data context is available to save changes."
+        case .originalImageMissing(let path):
+            return "The original image could not be found on disk: \(path)"
+        }
+    }
 }
 
 /// Main coordinator for gallery state management
@@ -132,35 +143,45 @@ final class GalleryCoordinator {
     ///   - width: Target pixel grid width
     ///   - height: Target pixel grid height
     func createVariant(for item: GalleryItem, width: Int, height: Int) async throws {
-        let pixelationEngine = PixelationEngine()
-
-        // TODO: Load image data from FileStorageManager using item.originalImagePath
-        let imageData = Data()
-
-        let pixelGrid = try await pixelationEngine.process(
-            imageData: imageData,
-            targetWidth: width,
-            targetHeight: height
-        )
-
-        let variant = Variant(
-            targetWidth: width,
-            targetHeight: height,
-            pixelGridData: pixelGrid.toRGBA8888()
-        )
-
-        variant.galleryItem = item
-        item.variants.append(variant)
-
         guard let modelContext else {
             Self.logger.error("createVariant called before a ModelContext was configured")
             throw GalleryCoordinatorError.missingModelContext
         }
 
-        modelContext.insert(variant)
-        try modelContext.save()
+        do {
+            // Load the original bytes the item was imported with. Without these
+            // the engine would pixelate an empty buffer and every variant would
+            // be black, which is exactly the bug this fixes.
+            let storage = try fileStorageManager()
+            guard let imageData = try await storage.load(filename: item.originalImagePath) else {
+                throw GalleryCoordinatorError.originalImageMissing(item.originalImagePath)
+            }
 
-        Self.logger.debug("Created variant for \(item.originalName): \(width)×\(height)")
+            let pixelationEngine = PixelationEngine()
+            let pixelGrid = try await pixelationEngine.process(
+                imageData: imageData,
+                targetWidth: width,
+                targetHeight: height
+            )
+
+            let variant = Variant(
+                targetWidth: width,
+                targetHeight: height,
+                pixelGridData: pixelGrid.toRGBA8888()
+            )
+
+            variant.galleryItem = item
+            item.variants.append(variant)
+
+            modelContext.insert(variant)
+            try modelContext.save()
+
+            Self.logger.debug("Created variant for \(item.originalName): \(width)×\(height)")
+        } catch {
+            currentError = error.localizedDescription
+            Self.logger.error("Failed to create variant for '\(item.originalName)': \(error)")
+            throw error
+        }
     }
 
     /// Delete a gallery item, removing it (and its variants via cascade) from
