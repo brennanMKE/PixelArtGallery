@@ -12,12 +12,19 @@ struct ExportPickerView: View {
     let onCancel: () -> Void
 
     private let exporter = VariantExporter()
+    #if os(iOS)
+    private let photoLibrarySaver = PhotoLibrarySaver()
+    #endif
 
     @State private var selectedFormat = "PNG"
-    @State private var isShowingSavePanel = false
-    @State private var selectedFileURL: URL?
     @State private var isExporting = false
     @State private var exportError: String?
+    #if os(macOS)
+    @State private var selectedFileURL: URL?
+    #endif
+    #if os(iOS)
+    @State private var documentExportURL: IdentifiableURL?
+    #endif
 
     private static let logger = Logger(subsystem: "com.pixelartgallery.ui", category: "ExportPickerView")
 
@@ -72,7 +79,8 @@ struct ExportPickerView: View {
                     .foregroundColor(.secondary)
             }
 
-            // File location info
+            #if os(macOS)
+            // File location info (macOS uses an explicit save-panel location)
             VStack(alignment: .leading, spacing: 8) {
                 if let url = selectedFileURL {
                     Text("Save Location")
@@ -100,10 +108,24 @@ struct ExportPickerView: View {
                         .foregroundColor(.secondary)
                 }
             }
+            #else
+            // iOS routes to Photos (raster) or the Files document picker — no file path to show.
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Save Destination")
+                    .font(.headline)
+                Text(canSaveToPhotos
+                     ? "Save to Photos or export the file via the Files app."
+                     : "\(selectedFormat) is not an image — export the file via the Files app.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            #endif
 
             Spacer()
 
             // Action buttons
+            #if os(macOS)
             HStack(spacing: 12) {
                 Button("Cancel") {
                     onCancel()
@@ -139,6 +161,56 @@ struct ExportPickerView: View {
                 .buttonStyle(.borderedProminent)
                 .disabled(isExporting || selectedFileURL == nil)
             }
+            #else
+            VStack(spacing: 12) {
+                if canSaveToPhotos {
+                    Button(action: saveToPhotos) {
+                        HStack {
+                            if isExporting {
+                                ProgressView()
+                                    .scaleEffect(0.8)
+                                Text("Saving...")
+                            } else {
+                                Image(systemName: "photo")
+                                Text("Save to Photos")
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isExporting)
+                }
+
+                let filesButton = Button(action: saveToFiles) {
+                    HStack {
+                        if isExporting {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                            Text("Preparing...")
+                        } else {
+                            Image(systemName: "folder")
+                            Text("Save to Files")
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .disabled(isExporting)
+
+                // Promote the Files button to primary when Photos isn't an option.
+                if canSaveToPhotos {
+                    filesButton.buttonStyle(.bordered)
+                } else {
+                    filesButton.buttonStyle(.borderedProminent)
+                }
+
+                Button("Cancel") {
+                    onCancel()
+                }
+                .frame(maxWidth: .infinity)
+                .buttonStyle(.bordered)
+                .disabled(isExporting)
+            }
+            #endif
 
             // Error message
             if let error = exportError {
@@ -158,6 +230,21 @@ struct ExportPickerView: View {
             }
         }
         .padding()
+        #if os(iOS)
+        .sheet(item: $documentExportURL) { wrapper in
+            DocumentExporterView(
+                fileURL: wrapper.url,
+                onComplete: { savedURL in
+                    documentExportURL = nil
+                    Self.logger.info("Export saved to Files: \(savedURL.lastPathComponent)")
+                    onExport(selectedFormat, savedURL)
+                },
+                onCancel: {
+                    documentExportURL = nil
+                }
+            )
+        }
+        #endif
     }
 
     private var formatDescription: String {
@@ -175,8 +262,8 @@ struct ExportPickerView: View {
         }
     }
 
+    #if os(macOS)
     private func showSavePanel() {
-        #if os(macOS)
         DispatchQueue.main.async {
             let panel = NSSavePanel()
             panel.allowedContentTypes = [uniformTypeForFormat()]
@@ -190,12 +277,116 @@ struct ExportPickerView: View {
                 }
             }
         }
-        #else
-        // iOS: Use document picker or file export via Files app
-        isShowingSavePanel = true
-        #endif
+    }
+    #endif
+
+    #if os(iOS)
+    /// Whether the currently selected format is a raster image eligible for the Photos library.
+    private var canSaveToPhotos: Bool {
+        guard let format = ExportFormat(name: selectedFormat) else { return false }
+        return PhotoLibrarySaver.canSaveToPhotos(format)
     }
 
+    private var temporaryExportURL: URL {
+        let name = "variant-\(variant.id.uuidString.prefix(8)).\(fileExtension)"
+        return FileManager.default.temporaryDirectory.appendingPathComponent(name)
+    }
+
+    /// Encode the variant to a temp file via `VariantExporter` (off the main actor) and return
+    /// its URL. Throws the same `ExportError`s the export path surfaces.
+    private func exportToTemporaryFile(format: ExportFormat) async throws -> URL {
+        let url = temporaryExportURL
+        let exporter = self.exporter
+        let width = variant.targetWidth
+        let height = variant.targetHeight
+        let pixelData = variant.pixelGridData
+        let scaleFactor = variant.scaleFactor
+
+        try await Task.detached {
+            try exporter.export(
+                width: width,
+                height: height,
+                pixelGridData: pixelData,
+                scaleFactor: scaleFactor,
+                as: format,
+                to: url
+            )
+        }.value
+        return url
+    }
+
+    /// Encode the variant and add it to the Photos library, reporting success/failure.
+    private func saveToPhotos() {
+        guard let format = ExportFormat(name: selectedFormat) else {
+            exportError = "Unsupported format: \(selectedFormat)"
+            return
+        }
+
+        isExporting = true
+        exportError = nil
+
+        Task {
+            do {
+                let url = try await exportToTemporaryFile(format: format)
+                try await photoLibrarySaver.saveToPhotos(fileURL: url, format: format)
+                try? FileManager.default.removeItem(at: url)
+                isExporting = false
+                Self.logger.info("Saved \(self.selectedFormat) to Photos library")
+                onExport(selectedFormat, url)
+            } catch {
+                isExporting = false
+                let message = describeSaveError(error)
+                exportError = message
+                Self.logger.error("Save to Photos failed: \(message)")
+            }
+        }
+    }
+
+    /// Encode the variant to a temp file and present the Files document picker over it.
+    private func saveToFiles() {
+        guard let format = ExportFormat(name: selectedFormat) else {
+            exportError = "Unsupported format: \(selectedFormat)"
+            return
+        }
+
+        isExporting = true
+        exportError = nil
+
+        Task {
+            do {
+                let url = try await exportToTemporaryFile(format: format)
+                isExporting = false
+                documentExportURL = IdentifiableURL(url: url)
+            } catch {
+                isExporting = false
+                let message = describeSaveError(error)
+                exportError = message
+                Self.logger.error("Save to Files failed: \(message)")
+            }
+        }
+    }
+
+    private func describeSaveError(_ error: Error) -> String {
+        if let exportError = error as? ExportError {
+            return Self.describe(exportError)
+        }
+        if let photoError = error as? PhotoLibrarySaveError {
+            switch photoError {
+            case .unsupportedFormat(let format):
+                return "\(format) is not an image and cannot be saved to Photos."
+            case .notAuthorized:
+                return "Photos access was denied. Enable it in Settings to save images."
+            case .saveFailed(let underlying):
+                return "Could not save to Photos: \(underlying)"
+            case .unavailable:
+                return "Saving to Photos is not available on this device."
+            }
+        }
+        return error.localizedDescription
+    }
+    #endif
+
+    #if os(macOS)
     private func performExport() {
         guard let fileURL = selectedFileURL else {
             exportError = "Please select a save location"
@@ -243,6 +434,7 @@ struct ExportPickerView: View {
             }
         }
     }
+    #endif
 
     private static func describe(_ error: ExportError) -> String {
         switch error {
@@ -278,6 +470,14 @@ struct ExportPickerView: View {
     }
     #endif
 }
+
+#if os(iOS)
+/// Wraps a `URL` so it can drive a `.sheet(item:)` presentation (URL is not `Identifiable`).
+private struct IdentifiableURL: Identifiable {
+    let url: URL
+    var id: String { url.absoluteString }
+}
+#endif
 
 #Preview {
     let sampleVariant = Variant(
