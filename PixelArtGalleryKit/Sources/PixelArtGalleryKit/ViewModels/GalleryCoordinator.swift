@@ -1,4 +1,6 @@
+import CoreGraphics
 import Foundation
+import ImageIO
 import Observation
 import SwiftData
 import os.log
@@ -8,13 +10,11 @@ import os.log
 final class GalleryCoordinator {
     private static let logger = Logger(subsystem: "com.pixelartgallery.ui", category: "GalleryCoordinator")
 
-    /// Query all gallery items from SwiftData
-    @Query var allGalleryItems: [GalleryItem]
-
-    /// Expose gallery items for views
-    var galleryItems: [GalleryItem] {
-        allGalleryItems
-    }
+    /// Gallery items surfaced to the views.
+    ///
+    /// SwiftData querying lives in the SwiftUI layer; views can assign fetched
+    /// results here so the coordinator's selection/mutation logic stays UI-agnostic.
+    var galleryItems: [GalleryItem] = []
 
     var selectedItem: GalleryItem?
     var selectedVariant: Variant?
@@ -24,10 +24,7 @@ final class GalleryCoordinator {
     var showVariantCreation = false
     var currentError: String?
 
-    @MainActor
-    init() {
-        // @Query is initialized automatically
-    }
+    init() {}
 
     func selectItem(_ item: GalleryItem) {
         selectedItem = item
@@ -107,7 +104,7 @@ final class GalleryCoordinator {
 
     /// Delete a gallery item by ID
     func deleteGalleryItem(id: UUID) {
-        if let item = allGalleryItems.first(where: { $0.id == id }) {
+        if let item = galleryItems.first(where: { $0.id == id }) {
             // SwiftData will handle deletion
             if selectedItem?.id == id {
                 selectedItem = nil

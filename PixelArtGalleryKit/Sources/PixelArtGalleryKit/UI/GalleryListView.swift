@@ -97,7 +97,7 @@ struct GalleryListView: View {
         .sheet(isPresented: $coordinator.showVariantCreation) {
             if let selectedItem = coordinator.selectedItem {
                 VariantCreationView { width, height in
-                    await coordinator.createVariant(for: selectedItem, width: width, height: height)
+                    try? await coordinator.createVariant(for: selectedItem, width: width, height: height)
                 }
             }
         }

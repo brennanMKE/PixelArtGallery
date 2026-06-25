@@ -20,7 +20,6 @@ struct PixelArtGalleryApp: App {
         let modelConfiguration = ModelConfiguration(
             schema: schema,
             url: Self.getGalleryDatabaseURL(),
-            isStoredInMemoryOnly: false,
             cloudKitDatabase: .none
         )
 

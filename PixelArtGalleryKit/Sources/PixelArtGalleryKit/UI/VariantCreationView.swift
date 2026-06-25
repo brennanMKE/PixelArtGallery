@@ -26,7 +26,9 @@ struct VariantCreationView: View {
                         Spacer()
                         TextField("Width", text: $width)
                             .textFieldStyle(.roundedBorder)
+                            #if os(iOS)
                             .keyboardType(.numberPad)
+                            #endif
                             .frame(width: 100)
                     }
 
@@ -35,7 +37,9 @@ struct VariantCreationView: View {
                         Spacer()
                         TextField("Height", text: $height)
                             .textFieldStyle(.roundedBorder)
+                            #if os(iOS)
                             .keyboardType(.numberPad)
+                            #endif
                             .frame(width: 100)
                     }
 
@@ -66,7 +70,9 @@ struct VariantCreationView: View {
                 }
             }
             .navigationTitle("Create Variant")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {

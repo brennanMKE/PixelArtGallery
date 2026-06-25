@@ -70,7 +70,7 @@ struct GalleryDetailView: View {
                                         }
                                         Text(variant.createdDate, style: .date)
                                             .font(.caption2)
-                                            .foregroundColor(.tertiary)
+                                            .foregroundStyle(.tertiary)
                                     }
                                     Spacer()
                                     Image(systemName: "arrow.right")
