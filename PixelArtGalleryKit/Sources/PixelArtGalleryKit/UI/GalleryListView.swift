@@ -1,16 +1,22 @@
+import SwiftData
 import SwiftUI
 
 /// Displays a list of all gallery items with preview thumbnails
 public struct GalleryListView: View {
     @State private var coordinator = GalleryCoordinator()
     @Environment(\.horizontalSizeClass) var horizontalSizeClass
+    @Environment(\.modelContext) private var modelContext
+
+    /// Live, auto-updating gallery items sourced directly from SwiftData.
+    /// The view owns the query; the coordinator only handles mutations.
+    @Query(sort: \GalleryItem.importedDate, order: .reverse) private var galleryItems: [GalleryItem]
 
     public init() {}
 
     public var body: some View {
         NavigationStack {
             Group {
-                if coordinator.galleryItems.isEmpty {
+                if galleryItems.isEmpty {
                     VStack(spacing: 16) {
                         Image(systemName: "photo.on.rectangle.angled")
                             .font(.system(size: 48))
@@ -36,7 +42,8 @@ public struct GalleryListView: View {
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
-                    List(coordinator.galleryItems) { item in
+                    List {
+                        ForEach(galleryItems) { item in
                         NavigationLink(value: item) {
                             HStack(spacing: 12) {
                                 // Thumbnail placeholder
@@ -58,6 +65,12 @@ public struct GalleryListView: View {
                                         .foregroundColor(.secondary)
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                        }
+                        .onDelete { offsets in
+                            for index in offsets {
+                                coordinator.deleteGalleryItem(galleryItems[index])
                             }
                         }
                     }
@@ -82,6 +95,9 @@ public struct GalleryListView: View {
                 }
             } message: {
                 Text(coordinator.currentError ?? "")
+            }
+            .onAppear {
+                coordinator.configure(modelContext: modelContext)
             }
         }
 

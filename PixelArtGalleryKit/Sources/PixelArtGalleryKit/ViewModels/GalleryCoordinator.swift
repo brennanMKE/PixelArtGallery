@@ -5,16 +5,25 @@ import Observation
 import SwiftData
 import os.log
 
+/// Errors raised by the gallery coordinator's persistence operations.
+nonisolated enum GalleryCoordinatorError: Error, Equatable {
+    /// A mutation was requested before a SwiftData `ModelContext` was injected.
+    case missingModelContext
+}
+
 /// Main coordinator for gallery state management
 @Observable
 final class GalleryCoordinator {
     private static let logger = Logger(subsystem: "com.pixelartgallery.ui", category: "GalleryCoordinator")
 
-    /// Gallery items surfaced to the views.
+    /// The SwiftData context used for inserts and deletes.
     ///
-    /// SwiftData querying lives in the SwiftUI layer; views can assign fetched
-    /// results here so the coordinator's selection/mutation logic stays UI-agnostic.
-    var galleryItems: [GalleryItem] = []
+    /// Live reads (`@Query`) belong to the SwiftUI layer; the coordinator only
+    /// needs the context to persist mutations. A view injects this via
+    /// ``configure(modelContext:)`` once the environment is available. It is
+    /// `@ObservationIgnored` because it is an implementation detail and must not
+    /// invalidate views when assigned.
+    @ObservationIgnored private var modelContext: ModelContext?
 
     var selectedItem: GalleryItem?
     var selectedVariant: Variant?
@@ -25,6 +34,15 @@ final class GalleryCoordinator {
     var currentError: String?
 
     init() {}
+
+    /// Inject the SwiftData context the coordinator should mutate.
+    ///
+    /// Idempotent: re-assigning the same context is a no-op so repeated
+    /// `onAppear` calls don't churn.
+    func configure(modelContext: ModelContext) {
+        guard self.modelContext !== modelContext else { return }
+        self.modelContext = modelContext
+    }
 
     func selectItem(_ item: GalleryItem) {
         selectedItem = item
@@ -60,6 +78,14 @@ final class GalleryCoordinator {
             originalWidth: width,
             originalHeight: height
         )
+
+        guard let modelContext else {
+            Self.logger.error("createGalleryItem called before a ModelContext was configured")
+            throw GalleryCoordinatorError.missingModelContext
+        }
+
+        modelContext.insert(item)
+        try modelContext.save()
 
         Self.logger.debug("Created gallery item: \(item.originalName) (\(width)×\(height))")
     }
@@ -99,28 +125,59 @@ final class GalleryCoordinator {
         variant.galleryItem = item
         item.variants.append(variant)
 
+        guard let modelContext else {
+            Self.logger.error("createVariant called before a ModelContext was configured")
+            throw GalleryCoordinatorError.missingModelContext
+        }
+
+        modelContext.insert(variant)
+        try modelContext.save()
+
         Self.logger.debug("Created variant for \(item.originalName): \(width)×\(height)")
     }
 
-    /// Delete a gallery item by ID
-    func deleteGalleryItem(id: UUID) {
-        if let item = galleryItems.first(where: { $0.id == id }) {
-            // SwiftData will handle deletion
-            if selectedItem?.id == id {
-                selectedItem = nil
-            }
+    /// Delete a gallery item, removing it (and its variants via cascade) from
+    /// the SwiftData context.
+    func deleteGalleryItem(_ item: GalleryItem) {
+        guard let modelContext else {
+            Self.logger.error("deleteGalleryItem called before a ModelContext was configured")
+            return
+        }
+
+        let id = item.id
+        if selectedItem?.id == id {
+            selectedItem = nil
+        }
+
+        modelContext.delete(item)
+        do {
+            try modelContext.save()
             Self.logger.debug("Deleted gallery item: \(id)")
+        } catch {
+            currentError = error.localizedDescription
+            Self.logger.error("Failed to delete gallery item \(id): \(error)")
         }
     }
 
-    /// Delete a variant by ID
-    func deleteVariant(id: UUID) {
-        if let variant = selectedItem?.variants.first(where: { $0.id == id }) {
-            selectedItem?.variants.removeAll { $0.id == id }
-            if selectedVariant?.id == id {
-                selectedVariant = nil
-            }
+    /// Delete a variant, removing it from the SwiftData context.
+    func deleteVariant(_ variant: Variant) {
+        guard let modelContext else {
+            Self.logger.error("deleteVariant called before a ModelContext was configured")
+            return
+        }
+
+        let id = variant.id
+        if selectedVariant?.id == id {
+            selectedVariant = nil
+        }
+
+        modelContext.delete(variant)
+        do {
+            try modelContext.save()
             Self.logger.debug("Deleted variant: \(id)")
+        } catch {
+            currentError = error.localizedDescription
+            Self.logger.error("Failed to delete variant \(id): \(error)")
         }
     }
 }

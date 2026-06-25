@@ -80,6 +80,13 @@ struct GalleryDetailView: View {
                                 .background(Color.gray.opacity(0.1))
                                 .cornerRadius(8)
                             }
+                            .contextMenu {
+                                Button(role: .destructive) {
+                                    coordinator.deleteVariant(variant)
+                                } label: {
+                                    Label("Delete Variant", systemImage: "trash")
+                                }
+                            }
                         }
                     }
                 }
