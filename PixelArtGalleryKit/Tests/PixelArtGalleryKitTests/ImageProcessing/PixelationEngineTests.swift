@@ -38,6 +38,36 @@ final class PixelationEngineTests: XCTestCase {
         XCTAssertGreaterThan(sample.red, sample.blue, "Red source should produce red-dominant pixels")
     }
 
+    /// Downsampling must AVERAGE the source region for each output cell, not
+    /// pick a single nearest-neighbor pixel. A 2x2 black/white checkerboard
+    /// collapsed to a single cell should yield mid-gray (~128). Nearest-neighbor
+    /// (`interpolationQuality = .none`) would instead return one corner pixel —
+    /// pure black (0) or pure white (255) — so a mid-gray result proves the
+    /// engine area-averages as the PRD requires.
+    func testDownsampleAveragesSourceRegionToMidGray() async throws {
+        // 2x2 checkerboard: black / white on top row, white / black on bottom.
+        let checkerboard = try Self.makeCheckerboardPNGData()
+
+        let engine = PixelationEngine()
+        let grid = try await engine.process(
+            imageData: checkerboard,
+            targetWidth: 1,
+            targetHeight: 1
+        )
+
+        let pixel = grid.color(x: 0, y: 0)
+        // Average of two black (0) and two white (255) pixels is 127.5 → ~128.
+        // Allow tolerance for rounding / color-space conversion.
+        let midGray = 128
+        let tolerance = 24
+        XCTAssertEqual(Int(pixel.red), midGray, accuracy: tolerance, "Averaged red should be mid-gray, not a single sampled pixel")
+        XCTAssertEqual(Int(pixel.green), midGray, accuracy: tolerance, "Averaged green should be mid-gray, not a single sampled pixel")
+        XCTAssertEqual(Int(pixel.blue), midGray, accuracy: tolerance, "Averaged blue should be mid-gray, not a single sampled pixel")
+        // Explicitly reject the nearest-neighbor outcomes (pure black or white).
+        XCTAssertGreaterThan(Int(pixel.red), 40, "Nearest-neighbor would have returned pure black (0)")
+        XCTAssertLessThan(Int(pixel.red), 215, "Nearest-neighbor would have returned pure white (255)")
+    }
+
     func testProcessRejectsInvalidDimensions() async {
         let engine = PixelationEngine()
         let pngData = try? Self.makePNGData(width: 4, height: 4, red: 0, green: 1, blue: 0)
@@ -73,6 +103,41 @@ final class PixelationEngineTests: XCTestCase {
         ))
         CGImageDestinationAddImage(destination, image, nil)
         XCTAssertTrue(CGImageDestinationFinalize(destination), "Failed to encode PNG")
+        return mutableData as Data
+    }
+
+    /// Generate a 2x2 black/white checkerboard PNG. Two cells are black and two
+    /// are white, so the area-average of the whole image is mid-gray.
+    private static func makeCheckerboardPNGData() throws -> Data {
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let context = try XCTUnwrap(CGContext(
+            data: nil,
+            width: 2,
+            height: 2,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        let black = CGColor(red: 0, green: 0, blue: 0, alpha: 1)
+        let white = CGColor(red: 1, green: 1, blue: 1, alpha: 1)
+        // (0,0) black, (1,0) white, (0,1) white, (1,1) black.
+        context.setFillColor(black)
+        context.fill(CGRect(x: 0, y: 0, width: 1, height: 1))
+        context.setFillColor(white)
+        context.fill(CGRect(x: 1, y: 0, width: 1, height: 1))
+        context.setFillColor(white)
+        context.fill(CGRect(x: 0, y: 1, width: 1, height: 1))
+        context.setFillColor(black)
+        context.fill(CGRect(x: 1, y: 1, width: 1, height: 1))
+        let image = try XCTUnwrap(context.makeImage())
+
+        let mutableData = NSMutableData()
+        let destination = try XCTUnwrap(CGImageDestinationCreateWithData(
+            mutableData, UTType.png.identifier as CFString, 1, nil
+        ))
+        CGImageDestinationAddImage(destination, image, nil)
+        XCTAssertTrue(CGImageDestinationFinalize(destination), "Failed to encode checkerboard PNG")
         return mutableData as Data
     }
 }

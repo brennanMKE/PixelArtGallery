@@ -68,8 +68,15 @@ nonisolated public struct PixelationEngine: Sendable {
             throw PixelationError.failedToCreateContext
         }
 
-        // Nearest-neighbor sampling keeps hard pixel edges rather than blurring.
-        context.interpolationQuality = .none
+        // High-quality interpolation makes Core Graphics area-average the source
+        // pixels that fall under each destination cell when downscaling, rather
+        // than sampling a single nearest pixel. This matches the PRD's bilinear-
+        // with-light-blur requirement (per the PixelArtConverter reference): each
+        // output cell reflects the true average color of its source region, which
+        // is critical for color accuracy on the FT displays. Anti-aliasing is left
+        // enabled so partially-covered edge cells blend correctly.
+        context.interpolationQuality = .high
+        context.setShouldAntialias(true)
         context.draw(image, in: CGRect(x: 0, y: 0, width: targetWidth, height: targetHeight))
 
         var rows = [[PixelColor]]()
