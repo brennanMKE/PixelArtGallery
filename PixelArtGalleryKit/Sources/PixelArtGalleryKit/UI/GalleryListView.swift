@@ -106,7 +106,7 @@ public struct GalleryListView: View {
             ImagePickerView { imageData in
                 Task {
                     let imageName = "Imported Image"
-                    try? coordinator.createGalleryItem(name: imageName, imageData: imageData)
+                    try? await coordinator.createGalleryItem(name: imageName, imageData: imageData)
                 }
             }
         }

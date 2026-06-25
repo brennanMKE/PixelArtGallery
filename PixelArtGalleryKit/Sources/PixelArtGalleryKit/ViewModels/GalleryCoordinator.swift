@@ -25,6 +25,11 @@ final class GalleryCoordinator {
     /// invalidate views when assigned.
     @ObservationIgnored private var modelContext: ModelContext?
 
+    /// File store for original image bytes. Created lazily on first import so a
+    /// directory-access failure surfaces through ``currentError`` rather than at
+    /// init. `@ObservationIgnored` because it is an implementation detail.
+    @ObservationIgnored private var fileStorage: FileStorageManager?
+
     var selectedItem: GalleryItem?
     var selectedVariant: Variant?
     var isImporting = false
@@ -53,41 +58,63 @@ final class GalleryCoordinator {
         selectedVariant = variant
     }
 
-    /// Create a new gallery item with image data
+    /// Create a new gallery item with image data.
+    ///
+    /// Writes the original bytes to disk through ``FileStorageManager``, records
+    /// the returned filename and the image's real pixel dimensions on a new
+    /// ``GalleryItem``, then inserts and saves it. Failures (disk, decode, or
+    /// SwiftData) are surfaced through ``currentError`` and rethrown so callers
+    /// can react.
+    ///
+    /// `async` because `FileStorageManager` is an actor.
     /// - Parameters:
     ///   - name: Display name for the image
     ///   - imageData: Raw image data (JPEG, PNG, HEIC, etc.)
-    func createGalleryItem(name: String, imageData: Data) throws {
-        let imagePath = "\(UUID().uuidString).jpg"
-
-        // Extract image dimensions from the provided data
-        var width = 0
-        var height = 0
-
-        if let cgImage = try? loadImage(from: imageData) {
-            width = cgImage.width
-            height = cgImage.height
-        }
-
-        // TODO: Use FileStorageManager to save image data
-        // For now, we'll save it directly to Application Support
-
-        let item = GalleryItem(
-            originalImagePath: imagePath,
-            originalName: name,
-            originalWidth: width,
-            originalHeight: height
-        )
-
+    func createGalleryItem(name: String, imageData: Data) async throws {
         guard let modelContext else {
             Self.logger.error("createGalleryItem called before a ModelContext was configured")
             throw GalleryCoordinatorError.missingModelContext
         }
 
-        modelContext.insert(item)
-        try modelContext.save()
+        do {
+            // Persist the original bytes and capture the on-disk filename.
+            let storage = try fileStorageManager()
+            let imagePath = try await storage.save(imageData: imageData)
 
-        Self.logger.debug("Created gallery item: \(item.originalName) (\(width)×\(height))")
+            // Extract real pixel dimensions from the provided data.
+            var width = 0
+            var height = 0
+            if let cgImage = try? loadImage(from: imageData) {
+                width = cgImage.width
+                height = cgImage.height
+            }
+
+            let item = GalleryItem(
+                originalImagePath: imagePath,
+                originalName: name,
+                originalWidth: width,
+                originalHeight: height
+            )
+
+            modelContext.insert(item)
+            try modelContext.save()
+
+            Self.logger.debug("Created gallery item: \(item.originalName) (\(width)×\(height)) at \(imagePath)")
+        } catch {
+            currentError = error.localizedDescription
+            Self.logger.error("Failed to create gallery item '\(name)': \(error)")
+            throw error
+        }
+    }
+
+    /// Lazily create and cache the file store, reusing it across imports.
+    private func fileStorageManager() throws -> FileStorageManager {
+        if let fileStorage {
+            return fileStorage
+        }
+        let storage = try FileStorageManager()
+        fileStorage = storage
+        return storage
     }
 
     /// Load CGImage from data
