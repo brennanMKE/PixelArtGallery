@@ -29,17 +29,24 @@ nonisolated public struct PixelationEngine: Sendable {
     /// - Returns: A `PixelGrid` sized `targetWidth × targetHeight`.
     public func process(imageData: Data, targetWidth: Int, targetHeight: Int) async throws -> PixelGrid {
         guard targetWidth > 0, targetHeight > 0 else {
+            AppLog.imageProcessor.error("Invalid target dimensions \(targetWidth)×\(targetHeight)")
             throw PixelationError.invalidTargetDimensions(width: targetWidth, height: targetHeight)
         }
 
+        AppLog.imageProcessor.debug("Pixelating \(imageData.count) bytes -> \(targetWidth)×\(targetHeight)")
+
         guard let source = CGImageSourceCreateWithData(imageData as CFData, nil) else {
+            AppLog.imageProcessor.error("Failed to create image source from \(imageData.count) bytes")
             throw PixelationError.failedToCreateImageSource
         }
         guard let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+            AppLog.imageProcessor.error("Failed to decode image from source")
             throw PixelationError.failedToDecodeImage
         }
 
-        return try pixelate(cgImage, targetWidth: targetWidth, targetHeight: targetHeight)
+        let grid = try pixelate(cgImage, targetWidth: targetWidth, targetHeight: targetHeight)
+        AppLog.imageProcessor.info("Pixelated \(cgImage.width)×\(cgImage.height) source into \(targetWidth)×\(targetHeight) grid")
+        return grid
     }
 
     /// Downsample a decoded `CGImage` into a `PixelGrid`.
@@ -65,6 +72,7 @@ nonisolated public struct PixelationEngine: Sendable {
                 bitmapInfo: bitmapInfo
             )
         }) else {
+            AppLog.imageProcessor.error("Failed to create drawing context for \(targetWidth)×\(targetHeight)")
             throw PixelationError.failedToCreateContext
         }
 

@@ -1,6 +1,5 @@
 import SwiftData
 import SwiftUI
-import os.log
 
 /// Shows details of a single variant with preview and export options
 struct VariantDetailView: View {
@@ -18,8 +17,6 @@ struct VariantDetailView: View {
     @State private var showExportPicker = false
     @State private var successMessage: String?
     @State private var errorMessage: String?
-
-    private static let logger = Logger(subsystem: "com.pixelartgallery.ui", category: "VariantDetailView")
 
     /// The currently selected display resolved from `selectedDisplayID`.
     private var selectedDisplay: FlaschenTaschenDisplay? {
@@ -187,7 +184,7 @@ struct VariantDetailView: View {
         variant.exportFormat = format
         showExportPicker = false
         successMessage = "Exported \(format) to \(url.lastPathComponent)"
-        Self.logger.info("Export completed successfully: \(format) -> \(url.lastPathComponent)")
+        AppLog.export.info("Export completed successfully: \(format, privacy: .public) -> \(url.lastPathComponent, privacy: .public)")
 
         // Clear success message after 3 seconds
         DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
@@ -214,7 +211,7 @@ struct VariantDetailView: View {
         errorMessage = nil
         successMessage = nil
 
-        Self.logger.debug("Sending to display: \(displayName) at \(host):\(port)")
+        AppLog.ftDiscovery.debug("Sending to display: \(displayName, privacy: .public) at \(host, privacy: .public):\(port)")
 
         Task {
             do {
@@ -229,7 +226,7 @@ struct VariantDetailView: View {
                 )
                 isSending = false
                 successMessage = "Sent to \(displayName)"
-                Self.logger.info("Send to display completed")
+                AppLog.ftDiscovery.info("Send to display completed")
 
                 // Clear success message after 3 seconds
                 try? await Task.sleep(for: .seconds(3))
@@ -237,7 +234,7 @@ struct VariantDetailView: View {
             } catch {
                 isSending = false
                 errorMessage = (error as? FTDisplayError)?.errorDescription ?? error.localizedDescription
-                Self.logger.error("Send to display failed: \(error.localizedDescription, privacy: .public)")
+                AppLog.ftDiscovery.error("Send to display failed: \(error.localizedDescription, privacy: .public)")
             }
         }
     }

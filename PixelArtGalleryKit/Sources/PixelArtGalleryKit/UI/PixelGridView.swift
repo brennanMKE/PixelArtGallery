@@ -8,9 +8,12 @@ struct PixelGridView: View {
     init(variant: Variant? = nil) {
         if let variant = variant {
             do {
-                _viewModel = State(initialValue: try PixelGridViewModel(variant: variant))
+                let model = try PixelGridViewModel(variant: variant)
+                AppLog.gridRenderer.debug("Rendering \(model.gridWidth)×\(model.gridHeight) grid for variant \(variant.id)")
+                _viewModel = State(initialValue: model)
             } catch {
                 // Fallback to empty grid on error
+                AppLog.gridRenderer.error("Failed to load variant \(variant.id) into grid; using empty grid: \(error.localizedDescription, privacy: .public)")
                 _viewModel = State(initialValue: PixelGridViewModel())
             }
         } else {

@@ -72,12 +72,16 @@ nonisolated public struct VariantExporter: Sendable {
         format: ExportFormat
     ) throws -> Data {
         guard width > 0, height > 0 else {
+            AppLog.export.error("Export rejected: invalid dimensions \(width)×\(height)")
             throw ExportError.invalidDimensions(width: width, height: height)
         }
         let expected = width * height * Self.bytesPerPixel
         guard pixelGridData.count == expected else {
+            AppLog.export.error("Export rejected: pixel data size mismatch (expected \(expected), got \(pixelGridData.count))")
             throw ExportError.invalidPixelData(expected: expected, actual: pixelGridData.count)
         }
+
+        AppLog.export.debug("Encoding \(width)×\(height) variant as \(format.rawValue, privacy: .public)")
 
         let grid = try PixelGrid.fromRGBA8888(pixelGridData, width: width, height: height)
 
@@ -123,7 +127,9 @@ nonisolated public struct VariantExporter: Sendable {
         )
         do {
             try bytes.write(to: url, options: .atomic)
+            AppLog.export.info("Exported \(format.rawValue, privacy: .public) (\(bytes.count) bytes) to \(url.lastPathComponent, privacy: .public)")
         } catch {
+            AppLog.export.error("Failed to write \(format.rawValue, privacy: .public) to \(url.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .public)")
             throw ExportError.writeFailed(underlying: error.localizedDescription)
         }
     }

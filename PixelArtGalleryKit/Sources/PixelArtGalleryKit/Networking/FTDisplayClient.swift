@@ -1,6 +1,5 @@
 import Foundation
 import Network
-import os.log
 
 /// Errors raised while sending a variant to a Flaschen Taschen display.
 public enum FTDisplayError: LocalizedError, Equatable {
@@ -64,11 +63,6 @@ public enum FTSendProgress: Equatable, Sendable {
 /// actor (the package defaults to `@MainActor` isolation) — satisfying the PRD
 /// rule that network I/O stays off the main actor.
 public actor FTDisplayClient {
-    private static let logger = Logger(
-        subsystem: "com.pixelartgallery.networking",
-        category: "FTSend"
-    )
-
     /// How long to wait for the UDP connection to become ready before giving up.
     private let connectionTimeout: Duration
 
@@ -104,12 +98,16 @@ public actor FTDisplayClient {
         onProgress: (@Sendable (FTSendProgress) -> Void)? = nil
     ) async throws {
         guard port > 0, port <= 65_535, let nwPort = NWEndpoint.Port(rawValue: UInt16(port)) else {
+            AppLog.ftDiscovery.warning("Send rejected: invalid port \(port)")
             throw FTDisplayError.invalidPort(port)
         }
         let trimmedHost = host.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedHost.isEmpty else {
+            AppLog.ftDiscovery.warning("Send rejected: empty host")
             throw FTDisplayError.invalidHost(host)
         }
+
+        AppLog.ftDiscovery.info("Sending \(width)×\(height) variant to \(trimmedHost, privacy: .public):\(port)")
 
         onProgress?(.encoding)
         let packet = try Self.makePacket(
@@ -119,7 +117,7 @@ public actor FTDisplayClient {
             scaleFactor: scaleFactor,
             offset: offset
         )
-        Self.logger.debug("Encoded FT packet: \(packet.count) bytes for \(width)x\(height) -> \(trimmedHost, privacy: .public):\(port)")
+        AppLog.ftDiscovery.debug("Encoded FT packet: \(packet.count) bytes for \(width)x\(height) -> \(trimmedHost, privacy: .public):\(port)")
 
         let nwHost = NWEndpoint.Host(trimmedHost)
         let connection = NWConnection(host: nwHost, port: nwPort, using: .udp)
@@ -132,7 +130,7 @@ public actor FTDisplayClient {
 
         connection.cancel()
         onProgress?(.completed)
-        Self.logger.info("Sent FT image (\(packet.count) bytes) to \(trimmedHost, privacy: .public):\(port)")
+        AppLog.ftDiscovery.info("Sent FT image (\(packet.count) bytes) to \(trimmedHost, privacy: .public):\(port)")
     }
 
     // MARK: - Packet construction

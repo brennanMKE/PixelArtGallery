@@ -4,7 +4,6 @@ import Foundation
 import ImageIO
 import Observation
 import SwiftData
-import os.log
 
 /// Outcome of an import attempt, letting the call site distinguish a freshly
 /// created item from one skipped because an identical image was already present.
@@ -37,8 +36,6 @@ nonisolated enum GalleryCoordinatorError: LocalizedError, Equatable {
 /// Main coordinator for gallery state management
 @Observable
 final class GalleryCoordinator {
-    private static let logger = Logger(subsystem: "com.pixelartgallery.ui", category: "GalleryCoordinator")
-
     /// The SwiftData context used for inserts and deletes.
     ///
     /// Live reads (`@Query`) belong to the SwiftUI layer; the coordinator only
@@ -106,9 +103,11 @@ final class GalleryCoordinator {
     @discardableResult
     func createGalleryItem(name: String, imageData: Data) async throws -> ImportResult {
         guard let modelContext else {
-            Self.logger.error("createGalleryItem called before a ModelContext was configured")
+            AppLog.gallery.error("createGalleryItem called before a ModelContext was configured")
             throw GalleryCoordinatorError.missingModelContext
         }
+
+        AppLog.gallery.info("Importing gallery item '\(name, privacy: .public)' (\(imageData.count) bytes)")
 
         do {
             // Compute the content hash first so duplicate detection happens
@@ -123,7 +122,7 @@ final class GalleryCoordinator {
             if let existing = try modelContext.fetch(descriptor).first {
                 let message = "“\(existing.originalName)” is already in your gallery — skipped the duplicate."
                 importMessage = message
-                Self.logger.debug("Skipped duplicate import; matches existing item: \(existing.originalName)")
+                AppLog.gallery.info("Skipped duplicate import; matches existing item: \(existing.originalName, privacy: .public)")
                 return .duplicate(existingName: existing.originalName)
             }
 
@@ -150,11 +149,11 @@ final class GalleryCoordinator {
             modelContext.insert(item)
             try modelContext.save()
 
-            Self.logger.debug("Created gallery item: \(item.originalName) (\(width)×\(height)) at \(imagePath)")
+            AppLog.gallery.info("Created gallery item: \(item.originalName, privacy: .public) (\(width)×\(height)) at \(imagePath, privacy: .public)")
             return .created
         } catch {
             currentError = error.localizedDescription
-            Self.logger.error("Failed to create gallery item '\(name)': \(error)")
+            AppLog.gallery.error("Failed to create gallery item '\(name, privacy: .public)': \(error.localizedDescription, privacy: .public)")
             throw error
         }
     }
@@ -202,9 +201,11 @@ final class GalleryCoordinator {
         associatedDisplayId: UUID? = nil
     ) async throws {
         guard let modelContext else {
-            Self.logger.error("createVariant called before a ModelContext was configured")
+            AppLog.variant.error("createVariant called before a ModelContext was configured")
             throw GalleryCoordinatorError.missingModelContext
         }
+
+        AppLog.variant.info("Creating variant for '\(item.originalName, privacy: .public)' at \(width)×\(height)")
 
         do {
             // Load the original bytes the item was imported with. Without these
@@ -235,10 +236,10 @@ final class GalleryCoordinator {
             modelContext.insert(variant)
             try modelContext.save()
 
-            Self.logger.debug("Created variant for \(item.originalName): \(width)×\(height)")
+            AppLog.variant.info("Created variant for \(item.originalName, privacy: .public): \(width)×\(height)")
         } catch {
             currentError = error.localizedDescription
-            Self.logger.error("Failed to create variant for '\(item.originalName)': \(error)")
+            AppLog.variant.error("Failed to create variant for '\(item.originalName, privacy: .public)': \(error.localizedDescription, privacy: .public)")
             throw error
         }
     }
@@ -256,7 +257,7 @@ final class GalleryCoordinator {
     @discardableResult
     func duplicateVariant(_ variant: Variant) throws -> Variant {
         guard let modelContext else {
-            Self.logger.error("duplicateVariant called before a ModelContext was configured")
+            AppLog.variant.error("duplicateVariant called before a ModelContext was configured")
             throw GalleryCoordinatorError.missingModelContext
         }
 
@@ -276,11 +277,11 @@ final class GalleryCoordinator {
         do {
             modelContext.insert(copy)
             try modelContext.save()
-            Self.logger.debug("Duplicated variant \(variant.id) -> \(copy.id)")
+            AppLog.variant.info("Duplicated variant \(variant.id) -> \(copy.id)")
             return copy
         } catch {
             currentError = error.localizedDescription
-            Self.logger.error("Failed to duplicate variant \(variant.id): \(error)")
+            AppLog.variant.error("Failed to duplicate variant \(variant.id): \(error.localizedDescription, privacy: .public)")
             throw error
         }
     }
@@ -299,12 +300,12 @@ final class GalleryCoordinator {
     ///   - height: New target pixel grid height.
     func updateVariantDimensions(_ variant: Variant, width: Int, height: Int) async throws {
         guard let modelContext else {
-            Self.logger.error("updateVariantDimensions called before a ModelContext was configured")
+            AppLog.variant.error("updateVariantDimensions called before a ModelContext was configured")
             throw GalleryCoordinatorError.missingModelContext
         }
 
         guard let item = variant.galleryItem else {
-            Self.logger.error("updateVariantDimensions called on a variant with no parent item")
+            AppLog.variant.error("updateVariantDimensions called on a variant with no parent item")
             throw GalleryCoordinatorError.originalImageMissing("<no parent item>")
         }
 
@@ -326,10 +327,10 @@ final class GalleryCoordinator {
             variant.pixelGridData = pixelGrid.toRGBA8888()
 
             try modelContext.save()
-            Self.logger.debug("Updated variant \(variant.id) dimensions to \(width)×\(height)")
+            AppLog.variant.info("Updated variant \(variant.id) dimensions to \(width)×\(height)")
         } catch {
             currentError = error.localizedDescription
-            Self.logger.error("Failed to update variant \(variant.id) dimensions: \(error)")
+            AppLog.variant.error("Failed to update variant \(variant.id) dimensions: \(error.localizedDescription, privacy: .public)")
             throw error
         }
     }
@@ -358,7 +359,7 @@ final class GalleryCoordinator {
         displayHeight: Int
     ) throws -> FlaschenTaschenDisplay {
         guard let modelContext else {
-            Self.logger.error("addManualDisplay called before a ModelContext was configured")
+            AppLog.ftDiscovery.error("addManualDisplay called before a ModelContext was configured")
             throw GalleryCoordinatorError.missingModelContext
         }
 
@@ -374,11 +375,11 @@ final class GalleryCoordinator {
         do {
             modelContext.insert(display)
             try modelContext.save()
-            Self.logger.debug("Added manual display: \(displayName) at \(host):\(port) (\(displayWidth)×\(displayHeight))")
+            AppLog.ftDiscovery.info("Added manual display: \(displayName, privacy: .public) at \(host, privacy: .public):\(port) (\(displayWidth)×\(displayHeight))")
             return display
         } catch {
             currentError = error.localizedDescription
-            Self.logger.error("Failed to add manual display '\(displayName)': \(error)")
+            AppLog.ftDiscovery.error("Failed to add manual display '\(displayName, privacy: .public)': \(error.localizedDescription, privacy: .public)")
             throw error
         }
     }
@@ -392,7 +393,7 @@ final class GalleryCoordinator {
     ///   - newName: The new user-friendly name.
     func renameDisplay(_ display: FlaschenTaschenDisplay, to newName: String) {
         guard let modelContext else {
-            Self.logger.error("renameDisplay called before a ModelContext was configured")
+            AppLog.ftDiscovery.error("renameDisplay called before a ModelContext was configured")
             return
         }
 
@@ -402,17 +403,17 @@ final class GalleryCoordinator {
         display.displayName = trimmed
         do {
             try modelContext.save()
-            Self.logger.debug("Renamed display \(display.id) to \(trimmed)")
+            AppLog.ftDiscovery.info("Renamed display \(display.id) to \(trimmed, privacy: .public)")
         } catch {
             currentError = error.localizedDescription
-            Self.logger.error("Failed to rename display \(display.id): \(error)")
+            AppLog.ftDiscovery.error("Failed to rename display \(display.id): \(error.localizedDescription, privacy: .public)")
         }
     }
 
     /// Delete a persisted Flaschen Taschen display from the registry.
     func deleteDisplay(_ display: FlaschenTaschenDisplay) {
         guard let modelContext else {
-            Self.logger.error("deleteDisplay called before a ModelContext was configured")
+            AppLog.ftDiscovery.error("deleteDisplay called before a ModelContext was configured")
             return
         }
 
@@ -420,10 +421,10 @@ final class GalleryCoordinator {
         modelContext.delete(display)
         do {
             try modelContext.save()
-            Self.logger.debug("Deleted display: \(id)")
+            AppLog.ftDiscovery.info("Deleted display: \(id)")
         } catch {
             currentError = error.localizedDescription
-            Self.logger.error("Failed to delete display \(id): \(error)")
+            AppLog.ftDiscovery.error("Failed to delete display \(id): \(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -441,11 +442,13 @@ final class GalleryCoordinator {
     func scanForDisplays(
         duration: Duration = .seconds(5)
     ) async -> (inserted: Int, updated: Int) {
+        AppLog.ftDiscovery.info("Starting display scan for \(duration.components.seconds)s")
         let service = FTDiscoveryService()
         var discovered: [DiscoveredFTDisplay] = []
         for await display in await service.scan(duration: duration) {
             discovered.append(display)
         }
+        AppLog.ftDiscovery.info("Display scan finished: \(discovered.count) discovered")
         return mergeDiscoveredDisplays(discovered)
     }
 
@@ -462,7 +465,7 @@ final class GalleryCoordinator {
         _ discovered: [DiscoveredFTDisplay]
     ) -> (inserted: Int, updated: Int) {
         guard let modelContext else {
-            Self.logger.error("mergeDiscoveredDisplays called before a ModelContext was configured")
+            AppLog.ftDiscovery.error("mergeDiscoveredDisplays called before a ModelContext was configured")
             return (0, 0)
         }
 
@@ -471,7 +474,7 @@ final class GalleryCoordinator {
             existing = try modelContext.fetch(FetchDescriptor<FlaschenTaschenDisplay>())
         } catch {
             currentError = error.localizedDescription
-            Self.logger.error("Failed to fetch displays for merge: \(error)")
+            AppLog.ftDiscovery.error("Failed to fetch displays for merge: \(error.localizedDescription, privacy: .public)")
             return (0, 0)
         }
 
@@ -495,10 +498,10 @@ final class GalleryCoordinator {
 
         do {
             try modelContext.save()
-            Self.logger.debug("Merged discovered displays: \(plan.insertions.count) inserted, \(plan.updates.count) updated")
+            AppLog.ftDiscovery.info("Merged discovered displays: \(plan.insertions.count) inserted, \(plan.updates.count) updated")
         } catch {
             currentError = error.localizedDescription
-            Self.logger.error("Failed to save merged displays: \(error)")
+            AppLog.ftDiscovery.error("Failed to save merged displays: \(error.localizedDescription, privacy: .public)")
             return (0, 0)
         }
 
@@ -509,7 +512,7 @@ final class GalleryCoordinator {
     /// the SwiftData context.
     func deleteGalleryItem(_ item: GalleryItem) {
         guard let modelContext else {
-            Self.logger.error("deleteGalleryItem called before a ModelContext was configured")
+            AppLog.gallery.error("deleteGalleryItem called before a ModelContext was configured")
             return
         }
 
@@ -521,17 +524,17 @@ final class GalleryCoordinator {
         modelContext.delete(item)
         do {
             try modelContext.save()
-            Self.logger.debug("Deleted gallery item: \(id)")
+            AppLog.gallery.info("Deleted gallery item: \(id)")
         } catch {
             currentError = error.localizedDescription
-            Self.logger.error("Failed to delete gallery item \(id): \(error)")
+            AppLog.gallery.error("Failed to delete gallery item \(id): \(error.localizedDescription, privacy: .public)")
         }
     }
 
     /// Delete a variant, removing it from the SwiftData context.
     func deleteVariant(_ variant: Variant) {
         guard let modelContext else {
-            Self.logger.error("deleteVariant called before a ModelContext was configured")
+            AppLog.variant.error("deleteVariant called before a ModelContext was configured")
             return
         }
 
@@ -543,10 +546,10 @@ final class GalleryCoordinator {
         modelContext.delete(variant)
         do {
             try modelContext.save()
-            Self.logger.debug("Deleted variant: \(id)")
+            AppLog.variant.info("Deleted variant: \(id)")
         } catch {
             currentError = error.localizedDescription
-            Self.logger.error("Failed to delete variant \(id): \(error)")
+            AppLog.variant.error("Failed to delete variant \(id): \(error.localizedDescription, privacy: .public)")
         }
     }
 }

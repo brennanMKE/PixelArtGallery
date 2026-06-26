@@ -1,5 +1,4 @@
 import SwiftUI
-import os.log
 #if os(macOS)
 import AppKit
 import UniformTypeIdentifiers
@@ -25,8 +24,6 @@ struct ExportPickerView: View {
     #if os(iOS)
     @State private var documentExportURL: IdentifiableURL?
     #endif
-
-    private static let logger = Logger(subsystem: "com.pixelartgallery.ui", category: "ExportPickerView")
 
     private var fileExtension: String {
         selectedFormat.lowercased()
@@ -236,7 +233,7 @@ struct ExportPickerView: View {
                 fileURL: wrapper.url,
                 onComplete: { savedURL in
                     documentExportURL = nil
-                    Self.logger.info("Export saved to Files: \(savedURL.lastPathComponent)")
+                    AppLog.export.info("Export saved to Files: \(savedURL.lastPathComponent, privacy: .public)")
                     onExport(selectedFormat, savedURL)
                 },
                 onCancel: {
@@ -273,7 +270,7 @@ struct ExportPickerView: View {
             panel.begin { response in
                 if response == .OK, let url = panel.url {
                     selectedFileURL = url
-                    Self.logger.debug("User selected save location: \(url.path)")
+                    AppLog.export.debug("User selected save location: \(url.path, privacy: .public)")
                 }
             }
         }
@@ -331,13 +328,13 @@ struct ExportPickerView: View {
                 try await photoLibrarySaver.saveToPhotos(fileURL: url, format: format)
                 try? FileManager.default.removeItem(at: url)
                 isExporting = false
-                Self.logger.info("Saved \(self.selectedFormat) to Photos library")
+                AppLog.export.info("Saved \(self.selectedFormat, privacy: .public) to Photos library")
                 onExport(selectedFormat, url)
             } catch {
                 isExporting = false
                 let message = describeSaveError(error)
                 exportError = message
-                Self.logger.error("Save to Photos failed: \(message)")
+                AppLog.export.error("Save to Photos failed: \(message, privacy: .public)")
             }
         }
     }
@@ -361,7 +358,7 @@ struct ExportPickerView: View {
                 isExporting = false
                 let message = describeSaveError(error)
                 exportError = message
-                Self.logger.error("Save to Files failed: \(message)")
+                AppLog.export.error("Save to Files failed: \(message, privacy: .public)")
             }
         }
     }
@@ -400,7 +397,7 @@ struct ExportPickerView: View {
         isExporting = true
         exportError = nil
 
-        Self.logger.debug("Exporting variant \(self.variant.id) as \(self.selectedFormat) to \(fileURL.path)")
+        AppLog.export.debug("Exporting variant \(self.variant.id) as \(self.selectedFormat, privacy: .public) to \(fileURL.path, privacy: .public)")
 
         // The exporter is nonisolated and pure; encode the file bytes off the main actor
         // by reading the variant's plain fields first (Variant is @Model / main-actor bound,
@@ -424,13 +421,13 @@ struct ExportPickerView: View {
                     )
                 }.value
                 isExporting = false
-                Self.logger.info("Export completed: \(self.selectedFormat)")
+                AppLog.export.info("Export completed: \(self.selectedFormat, privacy: .public)")
                 onExport(selectedFormat, fileURL)
             } catch {
                 isExporting = false
                 let message = (error as? ExportError).map(Self.describe) ?? error.localizedDescription
                 exportError = message
-                Self.logger.error("Export failed: \(message)")
+                AppLog.export.error("Export failed: \(message, privacy: .public)")
             }
         }
     }

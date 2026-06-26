@@ -1,6 +1,5 @@
 import Foundation
 import Network
-import os.log
 
 /// Errors raised while browsing for Flaschen Taschen displays.
 ///
@@ -43,11 +42,6 @@ actor FTDiscoveryService {
     /// The default Bonjour service type advertised by Flaschen Taschen displays.
     static let defaultServiceType = "_flaschen-taschen._tcp"
 
-    private static let logger = Logger(
-        subsystem: "com.pixelartgallery.networking",
-        category: "FTDiscovery"
-    )
-
     private let serviceType: String
     private var browser: NWBrowser?
 
@@ -69,6 +63,8 @@ actor FTDiscoveryService {
     func scan(duration: Duration = .seconds(5)) -> AsyncStream<DiscoveredFTDisplay> {
         stop()
 
+        AppLog.ftDiscovery.info("Browsing \(self.serviceType, privacy: .public) for \(duration.components.seconds)s")
+
         return AsyncStream { continuation in
             let parameters = NWParameters()
             parameters.includePeerToPeer = true
@@ -83,9 +79,9 @@ actor FTDiscoveryService {
             newBrowser.stateUpdateHandler = { state in
                 switch state {
                 case .ready:
-                    Self.logger.info("FTDiscovery browser ready for \(self.serviceType, privacy: .public)")
+                    AppLog.ftDiscovery.debug("Browser ready for \(self.serviceType, privacy: .public)")
                 case .failed(let error):
-                    Self.logger.error("FTDiscovery browser failed: \(error.localizedDescription, privacy: .public)")
+                    AppLog.ftDiscovery.error("Browser failed: \(error.localizedDescription, privacy: .public)")
                     continuation.finish()
                 case .cancelled:
                     continuation.finish()
@@ -97,7 +93,7 @@ actor FTDiscoveryService {
             newBrowser.browseResultsChangedHandler = { results, _ in
                 for result in results {
                     if let discovered = Self.discovered(from: result) {
-                        Self.logger.debug("FTDiscovery found \(discovered.serviceName, privacy: .public) at \(discovered.host, privacy: .public):\(discovered.port)")
+                        AppLog.ftDiscovery.debug("Found \(discovered.serviceName, privacy: .public) at \(discovered.host, privacy: .public):\(discovered.port)")
                         continuation.yield(discovered)
                     }
                 }

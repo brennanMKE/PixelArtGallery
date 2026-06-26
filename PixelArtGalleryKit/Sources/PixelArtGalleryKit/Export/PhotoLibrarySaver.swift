@@ -46,12 +46,14 @@ nonisolated public struct PhotoLibrarySaver: Sendable {
     ///   or `.unavailable` on platforms without a Photos library.
     public func saveToPhotos(fileURL: URL, format: ExportFormat) async throws {
         guard Self.canSaveToPhotos(format) else {
+            AppLog.export.warning("Cannot save \(format.rawValue, privacy: .public) to Photos: not a raster image")
             throw PhotoLibrarySaveError.unsupportedFormat(format: format.rawValue)
         }
 
         #if os(iOS)
         let status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
         guard status == .authorized || status == .limited else {
+            AppLog.export.warning("Photos add-only authorization denied")
             throw PhotoLibrarySaveError.notAuthorized
         }
 
@@ -60,7 +62,9 @@ nonisolated public struct PhotoLibrarySaver: Sendable {
                 let request = PHAssetCreationRequest.forAsset()
                 request.addResource(with: .photo, fileURL: fileURL, options: nil)
             }
+            AppLog.export.info("Saved \(format.rawValue, privacy: .public) to Photos library")
         } catch {
+            AppLog.export.error("Failed to save to Photos: \(error.localizedDescription, privacy: .public)")
             throw PhotoLibrarySaveError.saveFailed(underlying: error.localizedDescription)
         }
         #else
