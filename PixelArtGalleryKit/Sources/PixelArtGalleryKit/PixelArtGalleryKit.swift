@@ -3,7 +3,7 @@
 
 // MARK: - Public Exports
 // All public types are re-exported from their respective modules:
-// - FTDisplayClient, FTDisplayError from Networking
+// - FTDiscoveryService, DiscoveredFTDisplay, FTDiscoveryError from Networking
 // - VariantExporter, ExportError from Export
 // - FileStorageManager, FileStorageError from Persistence
 // - PixelGrid, PixelColor from ImageProcessing
