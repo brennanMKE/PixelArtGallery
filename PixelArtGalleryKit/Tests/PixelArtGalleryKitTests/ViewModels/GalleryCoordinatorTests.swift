@@ -78,6 +78,46 @@ final class GalleryCoordinatorTests: XCTestCase {
                      "Custom dimensions should record no display association")
     }
 
+    // MARK: - Duplicate prevention (#0014)
+
+    func testImportingSameBytesTwiceYieldsOneItem() async throws {
+        let context = try makeContext()
+        let coordinator = GalleryCoordinator()
+        coordinator.configure(modelContext: context)
+
+        let pngData = try Self.makePNGData(width: 16, height: 16)
+
+        let first = try await coordinator.createGalleryItem(name: "Original", imageData: pngData)
+        XCTAssertEqual(first, .created, "First import of fresh bytes should create an item")
+
+        let second = try await coordinator.createGalleryItem(name: "Copy", imageData: pngData)
+        XCTAssertEqual(second, .duplicate(existingName: "Original"),
+                       "Re-importing identical bytes should be reported as a duplicate")
+
+        let items = try context.fetch(FetchDescriptor<GalleryItem>())
+        XCTAssertEqual(items.count, 1, "Duplicate import must not create a second gallery item")
+        XCTAssertNotNil(coordinator.importMessage,
+                        "A user-facing message should be set when a duplicate is skipped")
+    }
+
+    func testImportingDifferentBytesYieldsTwoItems() async throws {
+        let context = try makeContext()
+        let coordinator = GalleryCoordinator()
+        coordinator.configure(modelContext: context)
+
+        let pngA = try Self.makePNGData(width: 16, height: 16)
+        let pngB = try Self.makePNGData(width: 24, height: 24)
+        XCTAssertNotEqual(pngA, pngB, "Test fixtures must differ for this to be meaningful")
+
+        let first = try await coordinator.createGalleryItem(name: "A", imageData: pngA)
+        let second = try await coordinator.createGalleryItem(name: "B", imageData: pngB)
+        XCTAssertEqual(first, .created)
+        XCTAssertEqual(second, .created)
+
+        let items = try context.fetch(FetchDescriptor<GalleryItem>())
+        XCTAssertEqual(items.count, 2, "Distinct images should each create a gallery item")
+    }
+
     // MARK: - Helpers
 
     private static func makePNGData(width: Int, height: Int) throws -> Data {

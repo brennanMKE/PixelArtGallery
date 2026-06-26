@@ -1,9 +1,21 @@
 import CoreGraphics
+import CryptoKit
 import Foundation
 import ImageIO
 import Observation
 import SwiftData
 import os.log
+
+/// Outcome of an import attempt, letting the call site distinguish a freshly
+/// created item from one skipped because an identical image was already present.
+public enum ImportResult: Equatable {
+    /// A new gallery item was created and saved.
+    case created
+    /// An item with identical original bytes already existed; nothing was
+    /// inserted and no duplicate file was written. The display name is the name
+    /// of the existing item so the UI can tell the user what it matched.
+    case duplicate(existingName: String)
+}
 
 /// Errors raised by the gallery coordinator's persistence operations.
 nonisolated enum GalleryCoordinatorError: LocalizedError, Equatable {
@@ -49,6 +61,11 @@ final class GalleryCoordinator {
     var showVariantCreation = false
     var currentError: String?
 
+    /// Transient, non-error message surfaced to the user after an import — e.g.
+    /// when an import was skipped because the image was already in the gallery.
+    /// The UI shows it and clears it; unlike ``currentError`` it is informational.
+    var importMessage: String?
+
     init() {}
 
     /// Inject the SwiftData context the coordinator should mutate.
@@ -69,25 +86,47 @@ final class GalleryCoordinator {
         selectedVariant = variant
     }
 
-    /// Create a new gallery item with image data.
+    /// Create a new gallery item with image data, skipping exact duplicates.
     ///
-    /// Writes the original bytes to disk through ``FileStorageManager``, records
-    /// the returned filename and the image's real pixel dimensions on a new
-    /// ``GalleryItem``, then inserts and saves it. Failures (disk, decode, or
-    /// SwiftData) are surfaced through ``currentError`` and rethrown so callers
-    /// can react.
+    /// Hashes the incoming bytes (SHA-256) and, if a gallery item with the same
+    /// `contentHash` already exists, skips the import entirely — no file is
+    /// written and no item is inserted — returning ``ImportResult/duplicate(existingName:)``
+    /// and setting ``importMessage`` so the UI can tell the user. Otherwise it
+    /// writes the original bytes to disk through ``FileStorageManager``, records
+    /// the returned filename, the image's real pixel dimensions, and the hash on
+    /// a new ``GalleryItem``, then inserts and saves it, returning
+    /// ``ImportResult/created``. Failures (disk, decode, or SwiftData) are
+    /// surfaced through ``currentError`` and rethrown so callers can react.
     ///
     /// `async` because `FileStorageManager` is an actor.
     /// - Parameters:
     ///   - name: Display name for the image
     ///   - imageData: Raw image data (JPEG, PNG, HEIC, etc.)
-    func createGalleryItem(name: String, imageData: Data) async throws {
+    /// - Returns: Whether a new item was created or an existing duplicate matched.
+    @discardableResult
+    func createGalleryItem(name: String, imageData: Data) async throws -> ImportResult {
         guard let modelContext else {
             Self.logger.error("createGalleryItem called before a ModelContext was configured")
             throw GalleryCoordinatorError.missingModelContext
         }
 
         do {
+            // Compute the content hash first so duplicate detection happens
+            // before any file is written.
+            let hash = Self.contentHash(for: imageData)
+
+            // Skip the import if an identical image is already in the gallery.
+            var descriptor = FetchDescriptor<GalleryItem>(
+                predicate: #Predicate { $0.contentHash == hash }
+            )
+            descriptor.fetchLimit = 1
+            if let existing = try modelContext.fetch(descriptor).first {
+                let message = "“\(existing.originalName)” is already in your gallery — skipped the duplicate."
+                importMessage = message
+                Self.logger.debug("Skipped duplicate import; matches existing item: \(existing.originalName)")
+                return .duplicate(existingName: existing.originalName)
+            }
+
             // Persist the original bytes and capture the on-disk filename.
             let storage = try fileStorageManager()
             let imagePath = try await storage.save(imageData: imageData)
@@ -104,18 +143,28 @@ final class GalleryCoordinator {
                 originalImagePath: imagePath,
                 originalName: name,
                 originalWidth: width,
-                originalHeight: height
+                originalHeight: height,
+                contentHash: hash
             )
 
             modelContext.insert(item)
             try modelContext.save()
 
             Self.logger.debug("Created gallery item: \(item.originalName) (\(width)×\(height)) at \(imagePath)")
+            return .created
         } catch {
             currentError = error.localizedDescription
             Self.logger.error("Failed to create gallery item '\(name)': \(error)")
             throw error
         }
+    }
+
+    /// Compute the lowercase hex SHA-256 digest of raw image bytes.
+    ///
+    /// Exact and cheap to compare, so duplicate detection on import is a simple
+    /// string equality check against the stored ``GalleryItem/contentHash``.
+    static func contentHash(for data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
     /// Lazily create and cache the file store, reusing it across imports.

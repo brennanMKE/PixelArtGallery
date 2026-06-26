@@ -20,6 +20,15 @@ public final class GalleryItem {
     public var originalWidth: Int
     public var originalHeight: Int
 
+    /// Lowercase hex SHA-256 digest of the original image bytes.
+    ///
+    /// Used for duplicate prevention on import: before creating a new item the
+    /// coordinator hashes the incoming bytes and skips the insert when an item
+    /// with the same hash already exists. Defaults to `""` so records persisted
+    /// before this field existed continue to load (they simply won't match the
+    /// de-dup check until re-imported).
+    public var contentHash: String
+
     /// Timestamp when this image was imported into the gallery
     public var importedDate: Date
 
@@ -33,12 +42,14 @@ public final class GalleryItem {
     ///   - originalName: User-friendly name of the image
     ///   - originalWidth: Width of original image
     ///   - originalHeight: Height of original image
+    ///   - contentHash: SHA-256 hex digest of the original bytes (defaults to "")
     ///   - importedDate: Timestamp of import (defaults to now)
     public init(
         originalImagePath: String,
         originalName: String,
         originalWidth: Int,
         originalHeight: Int,
+        contentHash: String = "",
         importedDate: Date = Date()
     ) {
         self.id = UUID()
@@ -46,6 +57,7 @@ public final class GalleryItem {
         self.originalName = originalName
         self.originalWidth = originalWidth
         self.originalHeight = originalHeight
+        self.contentHash = contentHash
         self.importedDate = importedDate
         self.variants = []
     }

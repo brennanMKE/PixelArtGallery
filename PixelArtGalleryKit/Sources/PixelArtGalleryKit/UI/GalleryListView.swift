@@ -114,6 +114,16 @@ public struct GalleryListView: View {
             } message: {
                 Text(coordinator.currentError ?? "")
             }
+
+            // Informational alert (e.g. a duplicate import was skipped). Not an
+            // error — surfaces the coordinator's non-error import message.
+            .alert("Import", isPresented: .constant(coordinator.importMessage != nil)) {
+                Button("OK") {
+                    coordinator.importMessage = nil
+                }
+            } message: {
+                Text(coordinator.importMessage ?? "")
+            }
             .onAppear {
                 coordinator.configure(modelContext: modelContext)
             }
