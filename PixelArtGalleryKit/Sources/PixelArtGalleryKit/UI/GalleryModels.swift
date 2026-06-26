@@ -60,34 +60,3 @@ public struct MockVariant: Identifiable, Sendable, Hashable {
         MockVariant(width: 128, height: 128),
     ]
 }
-
-public struct MockDisplay: Identifiable, Sendable, Hashable {
-    public let id: UUID
-    public let name: String
-    public let host: String
-    public let port: Int
-    public let width: Int
-    public let height: Int
-
-    public init(
-        id: UUID = UUID(),
-        name: String,
-        host: String,
-        port: Int,
-        width: Int,
-        height: Int
-    ) {
-        self.id = id
-        self.name = name
-        self.host = host
-        self.port = port
-        self.width = width
-        self.height = height
-    }
-
-    @MainActor
-    public static let samples = [
-        MockDisplay(name: "Office Wall", host: "192.168.1.100", port: 1337, width: 32, height: 32),
-        MockDisplay(name: "Break Room", host: "192.168.1.101", port: 1337, width: 16, height: 16),
-    ]
-}

@@ -1,3 +1,4 @@
+import SwiftData
 import SwiftUI
 import os.log
 
@@ -5,8 +6,13 @@ import os.log
 struct VariantDetailView: View {
     let variant: Variant
     let coordinator: GalleryCoordinator
+
+    /// Live list of persisted displays to send to, replacing the former mock
+    /// samples. The actual network send is issue 0012.
+    @Query(sort: \FlaschenTaschenDisplay.displayName) private var displays: [FlaschenTaschenDisplay]
+
     @State private var selectedExportFormat = "PNG"
-    @State private var selectedDisplay = MockDisplay.samples[0]
+    @State private var selectedDisplayID: UUID?
     @State private var isExporting = false
     @State private var isSending = false
     @State private var showExportPicker = false
@@ -14,6 +20,11 @@ struct VariantDetailView: View {
     @State private var errorMessage: String?
 
     private static let logger = Logger(subsystem: "com.pixelartgallery.ui", category: "VariantDetailView")
+
+    /// The currently selected display resolved from `selectedDisplayID`.
+    private var selectedDisplay: FlaschenTaschenDisplay? {
+        displays.first { $0.id == selectedDisplayID }
+    }
 
     var body: some View {
         ScrollView {
@@ -88,27 +99,40 @@ struct VariantDetailView: View {
                     Text("Send to Display")
                         .font(.headline)
 
-                    Picker("Display", selection: $selectedDisplay) {
-                        ForEach(MockDisplay.samples) { display in
-                            Text(display.name).tag(display)
-                        }
-                    }
-
-                    Button(action: handleSendToDisplay) {
-                        HStack {
-                            if isSending {
-                                ProgressView()
-                                    .scaleEffect(0.8)
-                                Text("Sending...")
-                            } else {
-                                Image(systemName: "arrow.up.right.circle.fill")
-                                Text("Send Now")
+                    if displays.isEmpty {
+                        Text("No displays yet. Add one from the Displays screen to send variants.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    } else {
+                        Picker("Display", selection: $selectedDisplayID) {
+                            ForEach(displays) { display in
+                                Text("\(display.displayName) (\(display.resolution))")
+                                    .tag(Optional(display.id))
                             }
                         }
-                        .frame(maxWidth: .infinity)
+
+                        Button(action: handleSendToDisplay) {
+                            HStack {
+                                if isSending {
+                                    ProgressView()
+                                        .scaleEffect(0.8)
+                                    Text("Sending...")
+                                } else {
+                                    Image(systemName: "arrow.up.right.circle.fill")
+                                    Text("Send Now")
+                                }
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(isSending || isExporting || selectedDisplay == nil)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(isSending || isExporting)
+                }
+                .onChange(of: displays.map(\.id)) { _, ids in
+                    // Keep a valid selection as the registry changes.
+                    if selectedDisplayID == nil || !ids.contains(where: { $0 == selectedDisplayID }) {
+                        selectedDisplayID = ids.first
+                    }
                 }
 
                 // Status messages
@@ -174,16 +198,19 @@ struct VariantDetailView: View {
     }
 
     private func handleSendToDisplay() {
+        guard let display = selectedDisplay else { return }
+        let displayName = display.displayName
+
         isSending = true
         errorMessage = nil
         successMessage = nil
 
-        Self.logger.debug("Sending to display: \(self.selectedDisplay.name)")
+        Self.logger.debug("Sending to display: \(displayName)")
 
-        // Simulate send operation - in real implementation would call FTDisplayClient
+        // Send is stubbed: the actual network send to the FT display is issue 0012.
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
             isSending = false
-            successMessage = "Sent to \(self.selectedDisplay.name)"
+            successMessage = "Sent to \(displayName)"
             Self.logger.info("Send to display completed")
 
             // Clear success message after 3 seconds

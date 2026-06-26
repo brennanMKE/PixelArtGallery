@@ -233,6 +233,128 @@ final class GalleryCoordinator {
         }
     }
 
+    /// Rename a persisted Flaschen Taschen display.
+    ///
+    /// Trims the supplied name; an all-whitespace name is rejected (no-op) so a
+    /// display always keeps a usable label.
+    /// - Parameters:
+    ///   - display: The display to rename.
+    ///   - newName: The new user-friendly name.
+    func renameDisplay(_ display: FlaschenTaschenDisplay, to newName: String) {
+        guard let modelContext else {
+            Self.logger.error("renameDisplay called before a ModelContext was configured")
+            return
+        }
+
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        display.displayName = trimmed
+        do {
+            try modelContext.save()
+            Self.logger.debug("Renamed display \(display.id) to \(trimmed)")
+        } catch {
+            currentError = error.localizedDescription
+            Self.logger.error("Failed to rename display \(display.id): \(error)")
+        }
+    }
+
+    /// Delete a persisted Flaschen Taschen display from the registry.
+    func deleteDisplay(_ display: FlaschenTaschenDisplay) {
+        guard let modelContext else {
+            Self.logger.error("deleteDisplay called before a ModelContext was configured")
+            return
+        }
+
+        let id = display.id
+        modelContext.delete(display)
+        do {
+            try modelContext.save()
+            Self.logger.debug("Deleted display: \(id)")
+        } catch {
+            currentError = error.localizedDescription
+            Self.logger.error("Failed to delete display \(id): \(error)")
+        }
+    }
+
+    /// Run an mDNS scan and merge any discovered displays into the registry.
+    ///
+    /// Streams results from ``FTDiscoveryService`` for `duration`, collects them,
+    /// then merges into SwiftData via ``mergeDiscoveredDisplays(_:)`` (de-duping by
+    /// host+port). Returns the number of displays inserted or updated. Discovery
+    /// failures degrade to "no displays found" — the stream simply finishes — so
+    /// this never throws on a discovery error; only a SwiftData save failure
+    /// surfaces through ``currentError``.
+    /// - Parameter duration: How long to browse before stopping the scan.
+    /// - Returns: A tuple of (inserted, updated) counts.
+    @discardableResult
+    func scanForDisplays(
+        duration: Duration = .seconds(5)
+    ) async -> (inserted: Int, updated: Int) {
+        let service = FTDiscoveryService()
+        var discovered: [DiscoveredFTDisplay] = []
+        for await display in await service.scan(duration: duration) {
+            discovered.append(display)
+        }
+        return mergeDiscoveredDisplays(discovered)
+    }
+
+    /// Merge discovered displays into the SwiftData registry, de-duplicating by
+    /// host+port.
+    ///
+    /// Fetches the current ``FlaschenTaschenDisplay`` records, applies the pure
+    /// ``DisplayMergePlan`` logic, then performs the inserts/updates and saves.
+    /// Existing records that match a discovered host+port are updated in place
+    /// (resolution refreshed, source set to `mdns`); unmatched discoveries are
+    /// inserted as new `mdns` records. Returns the (inserted, updated) counts.
+    @discardableResult
+    func mergeDiscoveredDisplays(
+        _ discovered: [DiscoveredFTDisplay]
+    ) -> (inserted: Int, updated: Int) {
+        guard let modelContext else {
+            Self.logger.error("mergeDiscoveredDisplays called before a ModelContext was configured")
+            return (0, 0)
+        }
+
+        let existing: [FlaschenTaschenDisplay]
+        do {
+            existing = try modelContext.fetch(FetchDescriptor<FlaschenTaschenDisplay>())
+        } catch {
+            currentError = error.localizedDescription
+            Self.logger.error("Failed to fetch displays for merge: \(error)")
+            return (0, 0)
+        }
+
+        let plan = DisplayMergePlan.build(existing: existing, discovered: discovered)
+
+        // Update matched existing records in place.
+        for update in plan.updates {
+            let model = update.target
+            model.displayName = update.discovered.serviceName.isEmpty
+                ? model.displayName
+                : update.discovered.serviceName
+            if let width = update.discovered.displayWidth { model.displayWidth = width }
+            if let height = update.discovered.displayHeight { model.displayHeight = height }
+            model.source = "mdns"
+        }
+
+        // Insert brand-new discoveries.
+        for value in plan.insertions {
+            modelContext.insert(value.makeDisplayModel())
+        }
+
+        do {
+            try modelContext.save()
+            Self.logger.debug("Merged discovered displays: \(plan.insertions.count) inserted, \(plan.updates.count) updated")
+        } catch {
+            currentError = error.localizedDescription
+            Self.logger.error("Failed to save merged displays: \(error)")
+            return (0, 0)
+        }
+
+        return (plan.insertions.count, plan.updates.count)
+    }
+
     /// Delete a gallery item, removing it (and its variants via cascade) from
     /// the SwiftData context.
     func deleteGalleryItem(_ item: GalleryItem) {

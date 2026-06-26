@@ -1,6 +1,13 @@
 import SwiftData
 import SwiftUI
 
+/// Non-model navigation destinations reachable from the gallery's nav stack.
+/// Model-backed pushes (a `GalleryItem`) use their own `navigationDestination`.
+enum GalleryRoute: Hashable {
+    /// The Flaschen Taschen display registry.
+    case displays
+}
+
 /// Displays a list of all gallery items with preview thumbnails
 public struct GalleryListView: View {
     @State private var coordinator = GalleryCoordinator()
@@ -74,9 +81,15 @@ public struct GalleryListView: View {
                             }
                         }
                     }
-                    .navigationDestination(for: GalleryItem.self) { item in
-                        GalleryDetailView(item: item, coordinator: coordinator)
-                    }
+                }
+            }
+            .navigationDestination(for: GalleryItem.self) { item in
+                GalleryDetailView(item: item, coordinator: coordinator)
+            }
+            .navigationDestination(for: GalleryRoute.self) { route in
+                switch route {
+                case .displays:
+                    DisplayRegistryView(coordinator: coordinator)
                 }
             }
             .navigationTitle("Gallery")
@@ -84,6 +97,11 @@ public struct GalleryListView: View {
                 ToolbarItem(placement: .primaryAction) {
                     Button(action: { coordinator.showImagePicker = true }) {
                         Image(systemName: "plus")
+                    }
+                }
+                ToolbarItem(placement: .secondaryAction) {
+                    NavigationLink(value: GalleryRoute.displays) {
+                        Label("Displays", systemImage: "display")
                     }
                 }
             }
