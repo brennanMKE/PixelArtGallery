@@ -199,25 +199,45 @@ struct VariantDetailView: View {
 
     private func handleSendToDisplay() {
         guard let display = selectedDisplay else { return }
+
+        // Read the @Model's plain fields on the main actor before handing the
+        // value-typed payload to the off-main-actor client.
         let displayName = display.displayName
+        let host = display.host
+        let port = display.port
+        let width = variant.targetWidth
+        let height = variant.targetHeight
+        let pixelGridData = variant.pixelGridData
+        let scaleFactor = variant.scaleFactor
 
         isSending = true
         errorMessage = nil
         successMessage = nil
 
-        Self.logger.debug("Sending to display: \(displayName)")
+        Self.logger.debug("Sending to display: \(displayName) at \(host):\(port)")
 
-        // Send is stubbed: the actual network send to the FT display is issue 0012.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-            isSending = false
-            successMessage = "Sent to \(displayName)"
-            Self.logger.info("Send to display completed")
+        Task {
+            do {
+                let client = FTDisplayClient()
+                try await client.send(
+                    width: width,
+                    height: height,
+                    pixelGridData: pixelGridData,
+                    scaleFactor: scaleFactor,
+                    to: host,
+                    port: port
+                )
+                isSending = false
+                successMessage = "Sent to \(displayName)"
+                Self.logger.info("Send to display completed")
 
-            // Clear success message after 3 seconds
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-                withAnimation {
-                    successMessage = nil
-                }
+                // Clear success message after 3 seconds
+                try? await Task.sleep(for: .seconds(3))
+                withAnimation { successMessage = nil }
+            } catch {
+                isSending = false
+                errorMessage = (error as? FTDisplayError)?.errorDescription ?? error.localizedDescription
+                Self.logger.error("Send to display failed: \(error.localizedDescription, privacy: .public)")
             }
         }
     }
