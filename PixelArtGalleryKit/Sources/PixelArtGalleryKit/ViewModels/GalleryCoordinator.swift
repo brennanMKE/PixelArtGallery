@@ -243,6 +243,97 @@ final class GalleryCoordinator {
         }
     }
 
+    /// Duplicate an existing variant within the same gallery item.
+    ///
+    /// Copies the source variant's dimensions, pixel data, scale factor, and
+    /// associated display id onto a brand-new ``Variant`` attached to the same
+    /// parent item, then inserts and saves. The existing `pixelGridData` is
+    /// copied verbatim — a pure duplicate doesn't need to re-run the engine —
+    /// so the copy is byte-identical to the source. `exportFormat` is left `nil`
+    /// because the copy hasn't been exported yet.
+    /// - Parameter variant: The variant to duplicate.
+    /// - Returns: The newly created copy.
+    @discardableResult
+    func duplicateVariant(_ variant: Variant) throws -> Variant {
+        guard let modelContext else {
+            Self.logger.error("duplicateVariant called before a ModelContext was configured")
+            throw GalleryCoordinatorError.missingModelContext
+        }
+
+        let copy = Variant(
+            targetWidth: variant.targetWidth,
+            targetHeight: variant.targetHeight,
+            pixelGridData: variant.pixelGridData,
+            associatedDisplayId: variant.associatedDisplayId,
+            scaleFactor: variant.scaleFactor
+        )
+
+        if let item = variant.galleryItem {
+            copy.galleryItem = item
+            item.variants.append(copy)
+        }
+
+        do {
+            modelContext.insert(copy)
+            try modelContext.save()
+            Self.logger.debug("Duplicated variant \(variant.id) -> \(copy.id)")
+            return copy
+        } catch {
+            currentError = error.localizedDescription
+            Self.logger.error("Failed to duplicate variant \(variant.id): \(error)")
+            throw error
+        }
+    }
+
+    /// Edit a variant's target dimensions, regenerating its pixel data.
+    ///
+    /// Reloads the parent gallery item's original image bytes through
+    /// ``FileStorageManager`` and re-runs the ``PixelationEngine`` at the new
+    /// dimensions, replacing `pixelGridData` and updating `targetWidth`/
+    /// `targetHeight`, then saves. This mirrors ``createVariant(for:width:height:associatedDisplayId:)``
+    /// because changing dimensions means the existing downsample is no longer
+    /// valid and must be recomputed from the source.
+    /// - Parameters:
+    ///   - variant: The variant whose dimensions should change.
+    ///   - width: New target pixel grid width.
+    ///   - height: New target pixel grid height.
+    func updateVariantDimensions(_ variant: Variant, width: Int, height: Int) async throws {
+        guard let modelContext else {
+            Self.logger.error("updateVariantDimensions called before a ModelContext was configured")
+            throw GalleryCoordinatorError.missingModelContext
+        }
+
+        guard let item = variant.galleryItem else {
+            Self.logger.error("updateVariantDimensions called on a variant with no parent item")
+            throw GalleryCoordinatorError.originalImageMissing("<no parent item>")
+        }
+
+        do {
+            let storage = try fileStorageManager()
+            guard let imageData = try await storage.load(filename: item.originalImagePath) else {
+                throw GalleryCoordinatorError.originalImageMissing(item.originalImagePath)
+            }
+
+            let pixelationEngine = PixelationEngine()
+            let pixelGrid = try await pixelationEngine.process(
+                imageData: imageData,
+                targetWidth: width,
+                targetHeight: height
+            )
+
+            variant.targetWidth = width
+            variant.targetHeight = height
+            variant.pixelGridData = pixelGrid.toRGBA8888()
+
+            try modelContext.save()
+            Self.logger.debug("Updated variant \(variant.id) dimensions to \(width)×\(height)")
+        } catch {
+            currentError = error.localizedDescription
+            Self.logger.error("Failed to update variant \(variant.id) dimensions: \(error)")
+            throw error
+        }
+    }
+
     /// Persist a manually entered Flaschen Taschen display.
     ///
     /// Used when mDNS discovery fails or is unavailable and the user types in a

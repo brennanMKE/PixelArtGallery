@@ -118,6 +118,53 @@ final class GalleryCoordinatorTests: XCTestCase {
         XCTAssertEqual(items.count, 2, "Distinct images should each create a gallery item")
     }
 
+    // MARK: - Variant management (#0015)
+
+    func testDuplicateVariantCopiesDataAndIncreasesCount() async throws {
+        let context = try makeContext()
+        let coordinator = GalleryCoordinator()
+        coordinator.configure(modelContext: context)
+
+        let item = try await makeItem(in: context, coordinator: coordinator)
+        try await coordinator.createVariant(for: item, width: 8, height: 8)
+
+        let original = try XCTUnwrap(try context.fetch(FetchDescriptor<Variant>()).first)
+        let copy = try coordinator.duplicateVariant(original)
+
+        let variants = try context.fetch(FetchDescriptor<Variant>())
+        XCTAssertEqual(variants.count, 2, "Duplicating should add a second variant")
+        XCTAssertNotEqual(copy.id, original.id, "The copy must be a distinct record")
+        XCTAssertEqual(copy.targetWidth, original.targetWidth)
+        XCTAssertEqual(copy.targetHeight, original.targetHeight)
+        XCTAssertEqual(copy.pixelGridData, original.pixelGridData,
+                       "Pixel data should be copied verbatim")
+        XCTAssertEqual(copy.galleryItem?.id, item.id,
+                       "The copy should belong to the same parent item")
+    }
+
+    func testUpdateVariantDimensionsRegeneratesPixelData() async throws {
+        let context = try makeContext()
+        let coordinator = GalleryCoordinator()
+        coordinator.configure(modelContext: context)
+
+        let item = try await makeItem(in: context, coordinator: coordinator)
+        try await coordinator.createVariant(for: item, width: 8, height: 8)
+
+        let variant = try XCTUnwrap(try context.fetch(FetchDescriptor<Variant>()).first)
+        XCTAssertEqual(variant.pixelGridData.count, 8 * 8 * 4)
+
+        try await coordinator.updateVariantDimensions(variant, width: 12, height: 6)
+
+        XCTAssertEqual(variant.targetWidth, 12)
+        XCTAssertEqual(variant.targetHeight, 6)
+        XCTAssertEqual(variant.pixelGridData.count, 12 * 6 * 4,
+                       "Regenerated pixel data length must match new width*height*4")
+
+        // No extra variant was created — the same record was edited in place.
+        let variants = try context.fetch(FetchDescriptor<Variant>())
+        XCTAssertEqual(variants.count, 1)
+    }
+
     // MARK: - Helpers
 
     private static func makePNGData(width: Int, height: Int) throws -> Data {

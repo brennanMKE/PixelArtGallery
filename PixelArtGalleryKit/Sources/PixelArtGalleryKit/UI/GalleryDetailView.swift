@@ -5,6 +5,11 @@ struct GalleryDetailView: View {
     let item: GalleryItem
     let coordinator: GalleryCoordinator
 
+    /// The variant pending a delete confirmation, if any.
+    @State private var variantToDelete: Variant?
+    /// The variant whose dimensions are being edited in a sheet, if any.
+    @State private var variantToEdit: Variant?
+
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
@@ -81,12 +86,43 @@ struct GalleryDetailView: View {
                                 .cornerRadius(8)
                             }
                             .contextMenu {
+                                Button {
+                                    variantToEdit = variant
+                                } label: {
+                                    Label("Edit Dimensions", systemImage: "ruler")
+                                }
+                                Button {
+                                    try? coordinator.duplicateVariant(variant)
+                                } label: {
+                                    Label("Duplicate", systemImage: "plus.square.on.square")
+                                }
                                 Button(role: .destructive) {
-                                    coordinator.deleteVariant(variant)
+                                    variantToDelete = variant
                                 } label: {
                                     Label("Delete Variant", systemImage: "trash")
                                 }
                             }
+                            #if os(iOS)
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                Button(role: .destructive) {
+                                    variantToDelete = variant
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                                Button {
+                                    variantToEdit = variant
+                                } label: {
+                                    Label("Edit", systemImage: "ruler")
+                                }
+                                .tint(.blue)
+                                Button {
+                                    try? coordinator.duplicateVariant(variant)
+                                } label: {
+                                    Label("Duplicate", systemImage: "plus.square.on.square")
+                                }
+                                .tint(.indigo)
+                            }
+                            #endif
                         }
                     }
                 }
@@ -102,6 +138,33 @@ struct GalleryDetailView: View {
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
+        .confirmationDialog(
+            "Delete this variant?",
+            isPresented: Binding(
+                get: { variantToDelete != nil },
+                set: { if !$0 { variantToDelete = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: variantToDelete
+        ) { variant in
+            Button("Delete Variant", role: .destructive) {
+                coordinator.deleteVariant(variant)
+                variantToDelete = nil
+            }
+            Button("Cancel", role: .cancel) {
+                variantToDelete = nil
+            }
+        } message: { variant in
+            Text("\(variant.targetWidth)×\(variant.targetHeight) — this can't be undone.")
+        }
+        .sheet(item: $variantToEdit) { variant in
+            VariantEditDimensionsView(
+                width: variant.targetWidth,
+                height: variant.targetHeight
+            ) { width, height in
+                try? await coordinator.updateVariantDimensions(variant, width: width, height: height)
+            }
+        }
     }
 }
 
