@@ -184,6 +184,55 @@ final class GalleryCoordinator {
         }
     }
 
+    /// Persist a manually entered Flaschen Taschen display.
+    ///
+    /// Used when mDNS discovery fails or is unavailable and the user types in a
+    /// host/port directly. Creates a ``FlaschenTaschenDisplay`` with
+    /// `source = "manual"`, inserts it, and saves — following the same
+    /// insert+save pattern as the other mutations here. Validation of the raw
+    /// user input happens in the UI layer via ``ManualDisplayInput`` before this
+    /// is called.
+    /// - Parameters:
+    ///   - host: Hostname or IP address (already trimmed/validated)
+    ///   - port: Service port (1–65535)
+    ///   - displayName: User-friendly name
+    ///   - displayWidth: Native pixel width
+    ///   - displayHeight: Native pixel height
+    /// - Returns: The persisted display.
+    @discardableResult
+    func addManualDisplay(
+        host: String,
+        port: Int,
+        displayName: String,
+        displayWidth: Int,
+        displayHeight: Int
+    ) throws -> FlaschenTaschenDisplay {
+        guard let modelContext else {
+            Self.logger.error("addManualDisplay called before a ModelContext was configured")
+            throw GalleryCoordinatorError.missingModelContext
+        }
+
+        let display = FlaschenTaschenDisplay(
+            host: host,
+            port: port,
+            displayName: displayName,
+            displayWidth: displayWidth,
+            displayHeight: displayHeight,
+            source: "manual"
+        )
+
+        do {
+            modelContext.insert(display)
+            try modelContext.save()
+            Self.logger.debug("Added manual display: \(displayName) at \(host):\(port) (\(displayWidth)×\(displayHeight))")
+            return display
+        } catch {
+            currentError = error.localizedDescription
+            Self.logger.error("Failed to add manual display '\(displayName)': \(error)")
+            throw error
+        }
+    }
+
     /// Delete a gallery item, removing it (and its variants via cascade) from
     /// the SwiftData context.
     func deleteGalleryItem(_ item: GalleryItem) {
