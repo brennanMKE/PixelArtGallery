@@ -142,7 +142,16 @@ final class GalleryCoordinator {
     ///   - item: The gallery item to create a variant for
     ///   - width: Target pixel grid width
     ///   - height: Target pixel grid height
-    func createVariant(for item: GalleryItem, width: Int, height: Int) async throws {
+    ///   - associatedDisplayId: Optional FT display this variant was sized for.
+    ///     When the user picks a discovered display to prefill the dimensions
+    ///     (PRD Option A), its `id` is recorded so the variant remembers which
+    ///     display it was made for.
+    func createVariant(
+        for item: GalleryItem,
+        width: Int,
+        height: Int,
+        associatedDisplayId: UUID? = nil
+    ) async throws {
         guard let modelContext else {
             Self.logger.error("createVariant called before a ModelContext was configured")
             throw GalleryCoordinatorError.missingModelContext
@@ -167,7 +176,8 @@ final class GalleryCoordinator {
             let variant = Variant(
                 targetWidth: width,
                 targetHeight: height,
-                pixelGridData: pixelGrid.toRGBA8888()
+                pixelGridData: pixelGrid.toRGBA8888(),
+                associatedDisplayId: associatedDisplayId
             )
 
             variant.galleryItem = item
