@@ -18,15 +18,22 @@ struct GalleryDetailView: View {
                     Text("Original Image")
                         .font(.headline)
 
-                    VStack {
+                    StoredImageView(
+                        path: item.originalImagePath,
+                        maxPixelSize: 2048,
+                        coordinator: coordinator,
+                        contentMode: .fit
+                    ) {
                         Image(systemName: "photo.fill")
                             .resizable()
-                            .scaledToFill()
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 200)
-                            .background(Color.gray.opacity(0.2))
+                            .scaledToFit()
+                            .padding(40)
+                            .foregroundStyle(.secondary)
                     }
-                    .cornerRadius(12)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 200)
+                    .background(Color.gray.opacity(0.2))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
 
                     if item.originalWidth > 0 && item.originalHeight > 0 {
                         Text("\(item.originalWidth)×\(item.originalHeight) px")

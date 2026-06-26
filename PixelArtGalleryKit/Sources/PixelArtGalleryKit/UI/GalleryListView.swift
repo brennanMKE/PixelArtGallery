@@ -53,13 +53,21 @@ public struct GalleryListView: View {
                         ForEach(galleryItems) { item in
                         NavigationLink(value: item) {
                             HStack(spacing: 12) {
-                                // Thumbnail placeholder
-                                Image(systemName: "photo.fill")
-                                    .resizable()
-                                    .scaledToFill()
-                                    .frame(width: 60, height: 60)
-                                    .background(Color.gray.opacity(0.2))
-                                    .cornerRadius(8)
+                                // Thumbnail of the imported original image.
+                                StoredImageView(
+                                    path: item.originalImagePath,
+                                    maxPixelSize: 180,
+                                    coordinator: coordinator
+                                ) {
+                                    Image(systemName: "photo.fill")
+                                        .resizable()
+                                        .scaledToFit()
+                                        .padding(14)
+                                        .foregroundStyle(.secondary)
+                                }
+                                .frame(width: 60, height: 60)
+                                .background(Color.gray.opacity(0.2))
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
 
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(item.originalName)

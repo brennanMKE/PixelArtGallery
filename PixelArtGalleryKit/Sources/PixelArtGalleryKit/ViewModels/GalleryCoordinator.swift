@@ -176,6 +176,20 @@ final class GalleryCoordinator {
         return storage
     }
 
+    /// Load the bytes of a stored original image by its `originalImagePath`.
+    ///
+    /// Returns `nil` (rather than throwing) if the file is missing or unreadable,
+    /// so image views can fall back to a placeholder without error handling.
+    func loadOriginalImageData(path: String) async -> Data? {
+        do {
+            let storage = try fileStorageManager()
+            return try await storage.load(filename: path)
+        } catch {
+            AppLog.gallery.error("Failed to load original image '\(path, privacy: .public)': \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
+    }
+
     /// Load CGImage from data
     private func loadImage(from data: Data) throws -> CGImage? {
         let imageSource = CGImageSourceCreateWithData(data as CFData, nil)

@@ -165,6 +165,49 @@ final class GalleryCoordinatorTests: XCTestCase {
         XCTAssertEqual(variants.count, 1)
     }
 
+    // MARK: - Original image display (#0017)
+
+    /// The exact path the gallery views use to render an imported original:
+    /// import → load bytes back from storage → decode/downsample to an image.
+    /// This is the regression guard for "imported image never displays".
+    func testImportedImageCanBeLoadedBackAndDecoded() async throws {
+        let context = try makeContext()
+        let coordinator = GalleryCoordinator()
+        coordinator.configure(modelContext: context)
+
+        let pngData = try Self.makePNGData(width: 400, height: 300)
+        try await coordinator.createGalleryItem(name: "Photo", imageData: pngData)
+        let item = try XCTUnwrap(try context.fetch(FetchDescriptor<GalleryItem>()).first)
+        XCTAssertFalse(item.originalImagePath.isEmpty)
+
+        // The views load the stored original through this coordinator method.
+        let loaded = await coordinator.loadOriginalImageData(path: item.originalImagePath)
+        let bytes = try XCTUnwrap(loaded, "Stored original must be loadable for display")
+        XCTAssertEqual(bytes, pngData, "Loaded bytes must match what was imported")
+
+        // And StoredImageView decodes those bytes into a renderable image.
+        let cg = try XCTUnwrap(StoredImageDecoder.downsample(bytes, maxPixelSize: 180),
+                               "Imported original must decode to a CGImage")
+        XCTAssertLessThanOrEqual(max(cg.width, cg.height), 180,
+                                 "Thumbnail must be downsampled to the requested max edge")
+        XCTAssertGreaterThan(cg.width, 0)
+        XCTAssertGreaterThan(cg.height, 0)
+    }
+
+    func testStoredImageDecoderPreservesAspectRatioWhenDownsampling() throws {
+        let data = try Self.makePNGData(width: 400, height: 200)
+        let cg = try XCTUnwrap(StoredImageDecoder.downsample(data, maxPixelSize: 100))
+        XCTAssertEqual(max(cg.width, cg.height), 100, "Longest edge should hit the max")
+        // 2:1 source → 2:1 thumbnail (100×50), allowing 1px rounding.
+        XCTAssertEqual(Double(cg.width) / Double(cg.height), 2.0, accuracy: 0.05)
+    }
+
+    func testStoredImageDecoderReturnsNilForInvalidData() {
+        let garbage = Data([0x00, 0x01, 0x02, 0x03, 0x04])
+        XCTAssertNil(StoredImageDecoder.downsample(garbage, maxPixelSize: 64),
+                     "Undecodable data should yield nil, not crash")
+    }
+
     // MARK: - Helpers
 
     private static func makePNGData(width: Int, height: Int) throws -> Data {
