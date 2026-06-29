@@ -9,6 +9,10 @@ struct GalleryDetailView: View {
     @State private var variantToDelete: Variant?
     /// The variant whose dimensions are being edited in a sheet, if any.
     @State private var variantToEdit: Variant?
+    /// Whether the rename alert for this item is showing.
+    @State private var isRenaming = false
+    /// Working text for the rename alert's text field.
+    @State private var renameText: String = ""
 
     var body: some View {
         ScrollView {
@@ -145,6 +149,25 @@ struct GalleryDetailView: View {
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    renameText = item.originalName
+                    isRenaming = true
+                } label: {
+                    Label("Rename", systemImage: "pencil")
+                }
+            }
+        }
+        .alert("Rename Image", isPresented: $isRenaming) {
+            TextField("Imported Image", text: $renameText)
+            Button("Cancel", role: .cancel) {}
+            Button("Rename") {
+                coordinator.renameGalleryItem(item, to: renameText)
+            }
+        } message: {
+            Text("Enter a new name for this image.")
+        }
         .confirmationDialog(
             "Delete this variant?",
             isPresented: Binding(

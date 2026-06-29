@@ -522,6 +522,33 @@ final class GalleryCoordinator {
         return (plan.insertions.count, plan.updates.count)
     }
 
+    /// Rename a gallery item.
+    ///
+    /// Trims the supplied name; an all-whitespace (or empty) name is rejected
+    /// (no-op) so an item always keeps a usable label. Mirrors
+    /// ``renameDisplay(_:to:)``.
+    /// - Parameters:
+    ///   - item: The gallery item to rename.
+    ///   - newName: The new user-friendly name.
+    func renameGalleryItem(_ item: GalleryItem, to newName: String) {
+        guard let modelContext else {
+            AppLog.gallery.error("renameGalleryItem called before a ModelContext was configured")
+            return
+        }
+
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        item.originalName = trimmed
+        do {
+            try modelContext.save()
+            AppLog.gallery.info("Renamed gallery item \(item.id) to \(trimmed, privacy: .public)")
+        } catch {
+            currentError = error.localizedDescription
+            AppLog.gallery.error("Failed to rename gallery item \(item.id): \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
     /// Delete a gallery item, removing it (and its variants via cascade) from
     /// the SwiftData context.
     func deleteGalleryItem(_ item: GalleryItem) {

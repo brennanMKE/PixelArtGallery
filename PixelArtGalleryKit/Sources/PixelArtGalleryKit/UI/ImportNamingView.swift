@@ -1,0 +1,79 @@
+import SwiftUI
+
+/// Lightweight modal that lets the user confirm or edit the name of a freshly
+/// picked image before it's imported. Prefilled with a suggested name (the
+/// source filename where the picker provides one) and falling back to
+/// ``defaultImportedImageName``. Mirrors ``ManualDisplayEntryView`` in style.
+struct ImportNamingView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var name: String
+
+    /// Persists the import under the supplied (trimmed) name. `async` because the
+    /// coordinator's import path is async.
+    var onConfirm: (String) async -> Void
+
+    /// - Parameters:
+    ///   - suggestedName: The picker's suggested name, used to prefill the field.
+    ///   - onConfirm: Called with the user's chosen name when they confirm.
+    init(suggestedName: String?, onConfirm: @escaping (String) async -> Void) {
+        _name = State(initialValue: effectiveImportedImageName(from: suggestedName))
+        self.onConfirm = onConfirm
+    }
+
+    private var trimmedName: String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// The name to import under: the trimmed entry, or the default if empty.
+    private var effectiveName: String {
+        trimmedName.isEmpty ? defaultImportedImageName : trimmedName
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Name") {
+                    TextField(defaultImportedImageName, text: $name)
+                        .textFieldStyle(.roundedBorder)
+                        #if os(iOS)
+                        .textInputAutocapitalization(.words)
+                        #endif
+                }
+
+                Section("About") {
+                    HStack(alignment: .top) {
+                        Image(systemName: "info.circle.fill")
+                            .foregroundColor(.blue)
+                        Text("Give this image a name so you can tell it apart in the gallery. You can rename it later.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            .navigationTitle("Name Image")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Import") {
+                        let chosen = effectiveName
+                        dismiss()
+                        Task { await onConfirm(chosen) }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#Preview {
+    ImportNamingView(suggestedName: "sunset.png", onConfirm: { _ in })
+}

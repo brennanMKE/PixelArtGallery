@@ -165,6 +165,54 @@ final class GalleryCoordinatorTests: XCTestCase {
         XCTAssertEqual(variants.count, 1)
     }
 
+    // MARK: - Naming at import / rename (#0018)
+
+    func testRenameGalleryItemUpdatesAndPersistsName() async throws {
+        let context = try makeContext()
+        let coordinator = GalleryCoordinator()
+        coordinator.configure(modelContext: context)
+
+        let item = try await makeItem(in: context, coordinator: coordinator)
+
+        coordinator.renameGalleryItem(item, to: "  Sunset Over Water  ")
+
+        XCTAssertEqual(item.originalName, "Sunset Over Water",
+                       "Rename should trim whitespace and update the name")
+
+        // Re-fetch from the context to confirm the change was saved, not just
+        // mutated on the in-memory object.
+        let refetched = try XCTUnwrap(try context.fetch(FetchDescriptor<GalleryItem>()).first)
+        XCTAssertEqual(refetched.originalName, "Sunset Over Water",
+                       "Rename must persist through the ModelContext")
+    }
+
+    func testRenameGalleryItemIgnoresEmptyOrWhitespaceName() async throws {
+        let context = try makeContext()
+        let coordinator = GalleryCoordinator()
+        coordinator.configure(modelContext: context)
+
+        let item = try await makeItem(in: context, coordinator: coordinator)
+        let original = item.originalName
+
+        coordinator.renameGalleryItem(item, to: "")
+        XCTAssertEqual(item.originalName, original, "Empty name should be ignored")
+
+        coordinator.renameGalleryItem(item, to: "   \n  ")
+        XCTAssertEqual(item.originalName, original, "Whitespace-only name should be ignored")
+    }
+
+    func testEffectiveImportedImageNameDefaulting() {
+        // Filename with extension → base name.
+        XCTAssertEqual(effectiveImportedImageName(from: "sunset.png"), "sunset")
+        XCTAssertEqual(effectiveImportedImageName(from: "my.photo.heic"), "my.photo")
+        // Whitespace around a name is trimmed.
+        XCTAssertEqual(effectiveImportedImageName(from: "  beach  "), "beach")
+        // nil or empty → the default fallback.
+        XCTAssertEqual(effectiveImportedImageName(from: nil), "Imported Image")
+        XCTAssertEqual(effectiveImportedImageName(from: ""), "Imported Image")
+        XCTAssertEqual(effectiveImportedImageName(from: "   "), "Imported Image")
+    }
+
     // MARK: - Original image display (#0017)
 
     /// The exact path the gallery views use to render an imported original:

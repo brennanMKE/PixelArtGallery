@@ -9,10 +9,27 @@ enum GalleryRoute: Hashable {
 }
 
 /// Displays a list of all gallery items with preview thumbnails
+/// A freshly picked image awaiting a name before it's imported. Carries the raw
+/// bytes plus the picker's suggested name (if any) so the naming sheet can
+/// prefill the field.
+private struct PendingImport: Identifiable {
+    let id = UUID()
+    let imageData: Data
+    let suggestedName: String?
+}
+
+/// Displays a list of all gallery items with preview thumbnails
 public struct GalleryListView: View {
     @State private var coordinator = GalleryCoordinator()
     @Environment(\.horizontalSizeClass) var horizontalSizeClass
     @Environment(\.modelContext) private var modelContext
+
+    /// A picked image awaiting naming, which drives the import naming sheet.
+    @State private var pendingImport: PendingImport?
+    /// The gallery item currently being renamed via the rename alert, if any.
+    @State private var itemToRename: GalleryItem?
+    /// Working text for the rename alert's text field.
+    @State private var renameText: String = ""
 
     /// Live, auto-updating gallery items sourced directly from SwiftData.
     /// The view owns the query; the coordinator only handles mutations.
@@ -82,6 +99,14 @@ public struct GalleryListView: View {
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             }
                         }
+                        .contextMenu {
+                            Button {
+                                renameText = item.originalName
+                                itemToRename = item
+                            } label: {
+                                Label("Rename", systemImage: "pencil")
+                            }
+                        }
                         }
                         .onDelete { offsets in
                             for index in offsets {
@@ -135,15 +160,39 @@ public struct GalleryListView: View {
             .onAppear {
                 coordinator.configure(modelContext: modelContext)
             }
+            // Rename an existing gallery item.
+            .alert("Rename Image", isPresented: Binding(
+                get: { itemToRename != nil },
+                set: { if !$0 { itemToRename = nil } }
+            )) {
+                TextField("Imported Image", text: $renameText)
+                Button("Cancel", role: .cancel) {
+                    itemToRename = nil
+                }
+                Button("Rename") {
+                    if let item = itemToRename {
+                        coordinator.renameGalleryItem(item, to: renameText)
+                    }
+                    itemToRename = nil
+                }
+            } message: {
+                Text("Enter a new name for this image.")
+            }
         }
 
-        // Image picker sheet
+        // Image picker sheet. Picking surfaces the bytes plus a suggested name,
+        // which we hold as a pending import so the user can confirm/edit the name
+        // before it's saved.
         .sheet(isPresented: $coordinator.showImagePicker) {
-            ImagePickerView { imageData in
-                Task {
-                    let imageName = "Imported Image"
-                    try? await coordinator.createGalleryItem(name: imageName, imageData: imageData)
-                }
+            ImagePickerView { imageData, suggestedName in
+                pendingImport = PendingImport(imageData: imageData, suggestedName: suggestedName)
+            }
+        }
+
+        // Import naming sheet — prefilled with the suggested name.
+        .sheet(item: $pendingImport) { pending in
+            ImportNamingView(suggestedName: pending.suggestedName) { name in
+                try? await coordinator.createGalleryItem(name: name, imageData: pending.imageData)
             }
         }
 
