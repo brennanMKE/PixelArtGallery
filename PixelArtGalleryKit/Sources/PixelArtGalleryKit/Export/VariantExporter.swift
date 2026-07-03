@@ -145,39 +145,10 @@ nonisolated public struct VariantExporter: Sendable {
     // MARK: - Raster (PNG / HEIC)
 
     private func encodeRaster(grid: PixelGrid, scaleFactor: Double, utType: UTType, format: ExportFormat) throws -> Data {
+        // Nearest-neighbor upscale each pixel into a scaleFactor×scaleFactor block, so the
+        // exported raster preserves hard pixel edges. Shared with the on-screen thumbnails.
         let scale = max(1, Int(scaleFactor.rounded()))
-        let outWidth = grid.width * scale
-        let outHeight = grid.height * scale
-
-        // Build a premultiplied RGBA8888 buffer, nearest-neighbor upscaled. CoreGraphics on
-        // Apple platforms supports premultipliedLast for an 8-bit RGB context (straight alpha
-        // is not a supported context format), so premultiply each channel by alpha.
-        var pixels = [UInt8](repeating: 0, count: outWidth * outHeight * Self.bytesPerPixel)
-        for y in 0..<outHeight {
-            let srcY = y / scale
-            for x in 0..<outWidth {
-                let srcX = x / scale
-                let color = grid.color(x: srcX, y: srcY)
-                let offset = (y * outWidth + x) * Self.bytesPerPixel
-                let a = Int(color.alpha)
-                pixels[offset] = UInt8(Int(color.red) * a / 255)
-                pixels[offset + 1] = UInt8(Int(color.green) * a / 255)
-                pixels[offset + 2] = UInt8(Int(color.blue) * a / 255)
-                pixels[offset + 3] = color.alpha
-            }
-        }
-
-        let colorSpace = CGColorSpaceCreateDeviceRGB()
-        let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
-        guard let context = CGContext(
-            data: &pixels,
-            width: outWidth,
-            height: outHeight,
-            bitsPerComponent: 8,
-            bytesPerRow: outWidth * Self.bytesPerPixel,
-            space: colorSpace,
-            bitmapInfo: bitmapInfo
-        ), let image = context.makeImage() else {
+        guard let image = grid.makeCGImage(scale: scale) else {
             throw ExportError.imageCreationFailed
         }
 

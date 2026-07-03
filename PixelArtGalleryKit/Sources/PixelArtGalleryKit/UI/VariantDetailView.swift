@@ -1,20 +1,21 @@
 import SwiftData
 import SwiftUI
 
-/// Shows details of a single variant with preview and export options
+/// Shows details of a single variant: a pixel preview, export, and send-to-display.
 struct VariantDetailView: View {
     let variant: Variant
     let coordinator: GalleryCoordinator
 
-    /// Live list of persisted displays to send to, replacing the former mock
-    /// samples. The actual network send is issue 0012.
+    @Environment(\.dismiss) private var dismiss
+
+    /// Live list of persisted displays to send to.
     @Query(sort: \FlaschenTaschenDisplay.displayName) private var displays: [FlaschenTaschenDisplay]
 
-    @State private var selectedExportFormat = "PNG"
     @State private var selectedDisplayID: UUID?
-    @State private var isExporting = false
     @State private var isSending = false
     @State private var showExportPicker = false
+    @State private var isEditingDimensions = false
+    @State private var isConfirmingDelete = false
     @State private var successMessage: String?
     @State private var errorMessage: String?
 
@@ -25,173 +26,167 @@ struct VariantDetailView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 20) {
-                // Variant info
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        VStack(alignment: .leading) {
-                            Text("Dimensions")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            Text("\(variant.targetWidth)×\(variant.targetHeight) px")
-                                .font(.headline)
-                        }
-                        Spacer()
-                        VStack(alignment: .trailing) {
-                            Text("Created")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            Text(variant.createdDate, style: .date)
-                                .font(.headline)
-                        }
-                    }
+            VStack(spacing: Theme.Spacing.l) {
+                infoCard
+                previewSection
+                exportSection
+                sendSection
+
+                if let successMessage {
+                    StatusBanner(kind: .success, message: successMessage)
                 }
-                .padding()
-                .background(Color.gray.opacity(0.1))
-                .cornerRadius(8)
-
-                // Pixel grid preview
-                VStack(alignment: .leading) {
-                    Text("Preview")
-                        .font(.headline)
-                    PixelGridView(variant: variant)
-                        .frame(height: 250)
+                if let errorMessage {
+                    StatusBanner(kind: .error, message: errorMessage)
                 }
-
-                // Export options
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Export")
-                        .font(.headline)
-
-                    Button(action: { showExportPicker = true }) {
-                        HStack {
-                            if isExporting {
-                                ProgressView()
-                                    .scaleEffect(0.8)
-                                Text("Exporting...")
-                            } else {
-                                Image(systemName: "arrow.down.doc.fill")
-                                Text("Export Variant")
-                            }
-                        }
-                        .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(isExporting || isSending)
-                }
-                .sheet(isPresented: $showExportPicker) {
-                    ExportPickerView(
-                        variant: variant,
-                        onExport: { format, url in
-                            handleExport(format: format, url: url)
-                        },
-                        onCancel: {
-                            showExportPicker = false
-                        }
-                    )
-                }
-
-                // Send to display
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Send to Display")
-                        .font(.headline)
-
-                    if displays.isEmpty {
-                        Text("No displays yet. Add one from the Displays screen to send variants.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    } else {
-                        Picker("Display", selection: $selectedDisplayID) {
-                            ForEach(displays) { display in
-                                Text("\(display.displayName) (\(display.resolution))")
-                                    .tag(Optional(display.id))
-                            }
-                        }
-
-                        Button(action: handleSendToDisplay) {
-                            HStack {
-                                if isSending {
-                                    ProgressView()
-                                        .scaleEffect(0.8)
-                                    Text("Sending...")
-                                } else {
-                                    Image(systemName: "arrow.up.right.circle.fill")
-                                    Text("Send Now")
-                                }
-                            }
-                            .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(isSending || isExporting || selectedDisplay == nil)
-                    }
-                }
-                .onChange(of: displays.map(\.id)) { _, ids in
-                    // Keep a valid selection as the registry changes.
-                    if selectedDisplayID == nil || !ids.contains(where: { $0 == selectedDisplayID }) {
-                        selectedDisplayID = ids.first
-                    }
-                }
-
-                // Status messages
-                if let success = successMessage {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundColor(.green)
-                            Text("Success")
-                                .fontWeight(.semibold)
-                        }
-                        Text(success)
-                            .font(.caption)
-                    }
-                    .padding(12)
-                    .background(Color.green.opacity(0.1))
-                    .cornerRadius(6)
-                    .transition(.opacity)
-                }
-
-                if let error = errorMessage {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Image(systemName: "exclamationmark.circle.fill")
-                                .foregroundColor(.red)
-                            Text("Error")
-                                .fontWeight(.semibold)
-                        }
-                        Text(error)
-                            .font(.caption)
-                    }
-                    .padding(12)
-                    .background(Color.red.opacity(0.1))
-                    .cornerRadius(6)
-                    .transition(.opacity)
-                }
-
-                Spacer()
             }
             .padding()
+            .animation(.default, value: successMessage)
+            .animation(.default, value: errorMessage)
         }
         .navigationTitle("Variant Details")
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
-    }
-
-    /// Called by `ExportPickerView` after it has already written the file to `url`.
-    /// Records the last-used format on the variant and surfaces a success message.
-    private func handleExport(format: String, url: URL) {
-        errorMessage = nil
-        variant.exportFormat = format
-        showExportPicker = false
-        successMessage = "Exported \(format) to \(url.lastPathComponent)"
-        AppLog.export.info("Export completed successfully: \(format, privacy: .public) -> \(url.lastPathComponent, privacy: .public)")
-
-        // Clear success message after 3 seconds
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
-            withAnimation {
-                successMessage = nil
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    Button {
+                        isEditingDimensions = true
+                    } label: {
+                        Label("Edit Dimensions", systemImage: "ruler")
+                    }
+                    Button {
+                        _ = try? coordinator.duplicateVariant(variant)
+                    } label: {
+                        Label("Duplicate", systemImage: "plus.square.on.square")
+                    }
+                    Button(role: .destructive) {
+                        isConfirmingDelete = true
+                    } label: {
+                        Label("Delete Variant", systemImage: "trash")
+                    }
+                } label: {
+                    Label("Actions", systemImage: "ellipsis.circle")
+                }
             }
         }
+        .sheet(isPresented: $showExportPicker) {
+            ExportPickerView(
+                variant: variant,
+                onExport: { format, url in handleExport(format: format, url: url) },
+                onCancel: { showExportPicker = false }
+            )
+        }
+        .sheet(isPresented: $isEditingDimensions) {
+            VariantEditDimensionsView(
+                width: variant.targetWidth,
+                height: variant.targetHeight
+            ) { width, height in
+                try? await coordinator.updateVariantDimensions(variant, width: width, height: height)
+            }
+        }
+        .confirmationDialog(
+            "Delete this variant?",
+            isPresented: $isConfirmingDelete,
+            titleVisibility: .visible
+        ) {
+            Button("Delete Variant", role: .destructive) {
+                coordinator.deleteVariant(variant)
+                dismiss()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("\(variant.targetWidth)×\(variant.targetHeight) — this can't be undone.")
+        }
+    }
+
+    // MARK: - Sections
+
+    private var infoCard: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                Text("Dimensions")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text("\(variant.targetWidth)×\(variant.targetHeight) px")
+                    .font(.headline)
+                    .monospacedDigit()
+            }
+            Spacer()
+            VStack(alignment: .trailing, spacing: Theme.Spacing.xs) {
+                Text("Created")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(variant.createdDate, style: .date)
+                    .font(.headline)
+            }
+        }
+        .card()
+    }
+
+    private var previewSection: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.s) {
+            SectionHeader("Preview")
+            PixelGridView(variant: variant)
+                .frame(height: 260)
+                .card(padding: 0)
+        }
+    }
+
+    private var exportSection: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.m) {
+            SectionHeader("Export")
+            Button {
+                showExportPicker = true
+            } label: {
+                Label("Export Variant", systemImage: "arrow.down.doc.fill")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .disabled(isSending)
+        }
+    }
+
+    private var sendSection: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.m) {
+            SectionHeader("Send to Display")
+
+            if displays.isEmpty {
+                InfoRow("No displays yet. Add one from the Displays screen to send variants.", icon: "display")
+            } else {
+                Picker("Display", selection: $selectedDisplayID) {
+                    ForEach(displays) { display in
+                        Text("\(display.displayName) (\(display.resolution))")
+                            .tag(Optional(display.id))
+                    }
+                }
+
+                Button(action: handleSendToDisplay) {
+                    Label(isSending ? "Sending…" : "Send Now", systemImage: "arrow.up.right.circle.fill")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .disabled(isSending || selectedDisplay == nil)
+            }
+        }
+        .onChange(of: displays.map(\.id)) { _, ids in
+            // Keep a valid selection as the registry changes.
+            if selectedDisplayID == nil || !ids.contains(where: { $0 == selectedDisplayID }) {
+                selectedDisplayID = ids.first
+            }
+        }
+    }
+
+    // MARK: - Actions
+
+    /// Called by `ExportPickerView` after it has already written the file to `url`.
+    private func handleExport(format: String, url: URL) {
+        variant.exportFormat = format
+        showExportPicker = false
+        AppLog.export.info("Export completed successfully: \(format, privacy: .public) -> \(url.lastPathComponent, privacy: .public)")
+        flashSuccess("Exported \(format) to \(url.lastPathComponent)")
     }
 
     private func handleSendToDisplay() {
@@ -225,17 +220,34 @@ struct VariantDetailView: View {
                     port: port
                 )
                 isSending = false
-                successMessage = "Sent to \(displayName)"
                 AppLog.ftDiscovery.info("Send to display completed")
-
-                // Clear success message after 3 seconds
-                try? await Task.sleep(for: .seconds(3))
-                withAnimation { successMessage = nil }
+                flashSuccess("Sent to \(displayName)")
             } catch {
                 isSending = false
-                errorMessage = (error as? FTDisplayError)?.errorDescription ?? error.localizedDescription
+                let message = (error as? FTDisplayError)?.errorDescription ?? error.localizedDescription
                 AppLog.ftDiscovery.error("Send to display failed: \(error.localizedDescription, privacy: .public)")
+                flashError(message)
             }
+        }
+    }
+
+    /// Show a transient success banner (auto-clears after a few seconds).
+    private func flashSuccess(_ message: String) {
+        errorMessage = nil
+        successMessage = message
+        Task {
+            try? await Task.sleep(for: .seconds(3))
+            if successMessage == message { successMessage = nil }
+        }
+    }
+
+    /// Show a transient error banner (auto-clears after a few seconds).
+    private func flashError(_ message: String) {
+        successMessage = nil
+        errorMessage = message
+        Task {
+            try? await Task.sleep(for: .seconds(6))
+            if errorMessage == message { errorMessage = nil }
         }
     }
 }

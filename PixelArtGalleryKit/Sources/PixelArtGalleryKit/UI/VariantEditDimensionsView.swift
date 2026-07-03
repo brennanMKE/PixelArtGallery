@@ -59,7 +59,7 @@ struct VariantEditDimensionsView: View {
 
                     if let error = errorMessage {
                         Text(error)
-                            .foregroundColor(.red)
+                            .foregroundStyle(.red)
                             .font(.caption)
                     }
                 }
@@ -68,17 +68,17 @@ struct VariantEditDimensionsView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
                             Image(systemName: "info.circle.fill")
-                                .foregroundColor(.blue)
+                                .foregroundStyle(.blue)
                             Text("Width and height must be between 1 and 512 pixels")
                                 .font(.caption)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
                         HStack {
                             Image(systemName: "arrow.triangle.2.circlepath")
-                                .foregroundColor(.blue)
+                                .foregroundStyle(.blue)
                             Text("Saving regenerates the pixel data from the original image")
                                 .font(.caption)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
                     }
                 }

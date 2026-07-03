@@ -2,13 +2,6 @@ import CoreGraphics
 import ImageIO
 import SwiftUI
 
-/// Sendable wrapper so a decoded `CGImage` can cross from a background task
-/// back to the main actor without a strict-concurrency warning. The CGImage is
-/// immutable once produced, so this is safe.
-private struct DecodedCGImage: @unchecked Sendable {
-    let cgImage: CGImage
-}
-
 /// Downsamples encoded image data to a `CGImage` no larger than `maxPixelSize`
 /// on its longest edge using ImageIO, which decodes at the reduced size rather
 /// than fully decoding the original — cheap even for very large photos.
@@ -64,11 +57,11 @@ struct StoredImageView<Placeholder: View>: View {
             return
         }
         let target = maxPixelSize
-        let decoded = await Task.detached(priority: .userInitiated) { () -> DecodedCGImage? in
+        let decoded = await Task.detached(priority: .userInitiated) { () -> SendableCGImage? in
             guard let cg = StoredImageDecoder.downsample(data, maxPixelSize: target) else {
                 return nil
             }
-            return DecodedCGImage(cgImage: cg)
+            return SendableCGImage(cgImage: cg)
         }.value
 
         // Ignore a stale result if the path changed while we were decoding.

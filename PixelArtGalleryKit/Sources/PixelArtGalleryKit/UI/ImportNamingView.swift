@@ -44,10 +44,10 @@ struct ImportNamingView: View {
                 Section("About") {
                     HStack(alignment: .top) {
                         Image(systemName: "info.circle.fill")
-                            .foregroundColor(.blue)
+                            .foregroundStyle(.blue)
                         Text("Give this image a name so you can tell it apart in the gallery. You can rename it later.")
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                 }
             }

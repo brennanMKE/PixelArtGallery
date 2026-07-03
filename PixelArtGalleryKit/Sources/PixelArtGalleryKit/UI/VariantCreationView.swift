@@ -75,7 +75,7 @@ struct VariantCreationView: View {
 
                     if let error = errorMessage {
                         Text(error)
-                            .foregroundColor(.red)
+                            .foregroundStyle(.red)
                             .font(.caption)
                     }
                 }
@@ -84,17 +84,17 @@ struct VariantCreationView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
                             Image(systemName: "info.circle.fill")
-                                .foregroundColor(.blue)
+                                .foregroundStyle(.blue)
                             Text("Width and height must be between 1 and 512 pixels")
                                 .font(.caption)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
                         HStack {
                             Image(systemName: "info.circle.fill")
-                                .foregroundColor(.blue)
+                                .foregroundStyle(.blue)
                             Text("Smaller dimensions create more abstract pixel art")
                                 .font(.caption)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                         }
                     }
                 }

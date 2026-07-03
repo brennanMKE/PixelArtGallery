@@ -172,7 +172,7 @@ struct ManualDisplayEntryView: View {
                 if let errorMessage {
                     Section {
                         Text(errorMessage)
-                            .foregroundColor(.red)
+                            .foregroundStyle(.red)
                             .font(.caption)
                     }
                 }
@@ -180,10 +180,10 @@ struct ManualDisplayEntryView: View {
                 Section("About") {
                     HStack(alignment: .top) {
                         Image(systemName: "info.circle.fill")
-                            .foregroundColor(.blue)
+                            .foregroundStyle(.blue)
                         Text("Use this to add a display by hand when it isn't found automatically on your network.")
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                     }
                 }
             }

@@ -29,33 +29,28 @@ struct ExportPickerView: View {
         selectedFormat.lowercased()
     }
 
-    private var mimeType: String {
-        switch selectedFormat {
-        case "PNG":
-            return "image/png"
-        case "HEIC":
-            return "image/heic"
-        case "PPM":
-            return "image/x-portable-pixmap"
-        case "JSON":
-            return "application/json"
-        default:
-            return "application/octet-stream"
+    var body: some View {
+        NavigationStack {
+            content
+                .navigationTitle("Export Variant")
+                #if os(iOS)
+                .navigationBarTitleDisplayMode(.inline)
+                #endif
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { onCancel() }
+                    }
+                }
         }
     }
 
-    var body: some View {
-        VStack(spacing: 20) {
-            // Header
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Export Variant")
-                    .font(.title2)
-                    .fontWeight(.semibold)
-                Text("Variant: \(variant.targetWidth)×\(variant.targetHeight)")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+    private var content: some View {
+        VStack(spacing: Theme.Spacing.l) {
+            Text("Variant: \(variant.targetWidth)×\(variant.targetHeight)")
+                .font(.caption)
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
             // Format selection
             VStack(alignment: .leading, spacing: 12) {
@@ -73,7 +68,7 @@ struct ExportPickerView: View {
                 // Format description
                 Text(formatDescription)
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
 
             #if os(macOS)
@@ -84,14 +79,14 @@ struct ExportPickerView: View {
                         .font(.headline)
                     HStack {
                         Image(systemName: "doc")
-                            .foregroundColor(.blue)
+                            .foregroundStyle(.blue)
                         VStack(alignment: .leading, spacing: 4) {
                             Text(url.lastPathComponent)
                                 .font(.caption)
                                 .fontWeight(.semibold)
                             Text(url.deletingLastPathComponent().path)
                                 .font(.caption2)
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
                                 .lineLimit(1)
                         }
                         Spacer()
@@ -102,7 +97,7 @@ struct ExportPickerView: View {
                 } else {
                     Text("No location selected")
                         .font(.caption)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
                 }
             }
             #else
@@ -114,7 +109,7 @@ struct ExportPickerView: View {
                      ? "Save to Photos or export the file via the Files app."
                      : "\(selectedFormat) is not an image — export the file via the Files app.")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             #endif
@@ -124,12 +119,6 @@ struct ExportPickerView: View {
             // Action buttons
             #if os(macOS)
             HStack(spacing: 12) {
-                Button("Cancel") {
-                    onCancel()
-                }
-                .frame(maxWidth: .infinity)
-                .buttonStyle(.bordered)
-
                 Button(action: showSavePanel) {
                     HStack {
                         Image(systemName: "folder")
@@ -199,31 +188,12 @@ struct ExportPickerView: View {
                 } else {
                     filesButton.buttonStyle(.borderedProminent)
                 }
-
-                Button("Cancel") {
-                    onCancel()
-                }
-                .frame(maxWidth: .infinity)
-                .buttonStyle(.bordered)
-                .disabled(isExporting)
             }
             #endif
 
             // Error message
             if let error = exportError {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Image(systemName: "exclamationmark.circle.fill")
-                            .foregroundColor(.red)
-                        Text("Export Failed")
-                            .fontWeight(.semibold)
-                    }
-                    Text(error)
-                        .font(.caption)
-                }
-                .padding(12)
-                .background(Color.red.opacity(0.1))
-                .cornerRadius(6)
+                StatusBanner(kind: .error, message: error)
             }
         }
         .padding()

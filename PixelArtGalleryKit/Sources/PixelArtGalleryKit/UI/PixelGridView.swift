@@ -76,10 +76,6 @@ struct PixelGridView: View {
             .padding()
             .background(Color.gray.opacity(0.1))
         }
-        .navigationTitle("Pixel Grid")
-        #if os(iOS)
-        .navigationBarTitleDisplayMode(.inline)
-        #endif
     }
 
     /// Readout showing the coordinate and RGBA value of the selected pixel.
@@ -139,13 +135,28 @@ struct PixelGridView: View {
                     opacity: Double(pixelColor.alpha) / 255.0
                 )
 
-                var path = Path(roundedRect: rect, cornerRadius: 0)
-                context.fill(path, with: .color(swiftUIColor))
-
-                // Draw border
-                path = Path(roundedRect: rect, cornerRadius: 0)
-                context.stroke(path, with: .color(.gray.opacity(0.3)), lineWidth: 0.5)
+                context.fill(Path(rect), with: .color(swiftUIColor))
             }
+        }
+
+        // Draw grid lines as a single batched path (O(w+h) strokes, not O(w·h)),
+        // and only when cells are large enough that lines read as a grid rather
+        // than swamping the art on big low-zoom grids.
+        if pixelSize >= 6 {
+            let totalWidth = CGFloat(viewModel.gridWidth) * pixelSize
+            let totalHeight = CGFloat(viewModel.gridHeight) * pixelSize
+            var gridLines = Path()
+            for x in 0...viewModel.gridWidth {
+                let xp = CGFloat(x) * pixelSize
+                gridLines.move(to: CGPoint(x: xp, y: 0))
+                gridLines.addLine(to: CGPoint(x: xp, y: totalHeight))
+            }
+            for y in 0...viewModel.gridHeight {
+                let yp = CGFloat(y) * pixelSize
+                gridLines.move(to: CGPoint(x: 0, y: yp))
+                gridLines.addLine(to: CGPoint(x: totalWidth, y: yp))
+            }
+            context.stroke(gridLines, with: .color(.gray.opacity(0.3)), lineWidth: 0.5)
         }
 
         // Highlight the selected cell on top of the grid

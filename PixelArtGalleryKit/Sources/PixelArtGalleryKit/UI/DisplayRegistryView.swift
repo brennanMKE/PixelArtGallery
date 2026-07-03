@@ -116,12 +116,12 @@ struct DisplayRegistryView: View {
         VStack(spacing: 16) {
             Image(systemName: "display")
                 .font(.system(size: 48))
-                .foregroundColor(.gray)
+                .foregroundStyle(.gray)
             Text("No Displays")
                 .font(.headline)
             Text("Scan your network or add a display manually")
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
 
             HStack(spacing: 12) {
@@ -177,7 +177,7 @@ private struct DisplayRow: View {
         HStack(spacing: 12) {
             Image(systemName: "display")
                 .font(.title2)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
                 .frame(width: 32)
 
             VStack(alignment: .leading, spacing: 4) {
@@ -185,14 +185,14 @@ private struct DisplayRow: View {
                     .font(.headline)
                 Text(display.endpoint)
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                 HStack(spacing: 6) {
                     Text(display.resolution)
                     Text("·")
                     Text(display.source == "mdns" ? "Discovered" : "Manual")
                 }
                 .font(.caption2)
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }

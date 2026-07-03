@@ -8,7 +8,6 @@ enum GalleryRoute: Hashable {
     case displays
 }
 
-/// Displays a list of all gallery items with preview thumbnails
 /// A freshly picked image awaiting a name before it's imported. Carries the raw
 /// bytes plus the picker's suggested name (if any) so the naming sheet can
 /// prefill the field.
@@ -41,29 +40,13 @@ public struct GalleryListView: View {
         NavigationStack {
             Group {
                 if galleryItems.isEmpty {
-                    VStack(spacing: 16) {
-                        Image(systemName: "photo.on.rectangle.angled")
-                            .font(.system(size: 48))
-                            .foregroundColor(.gray)
-                        Text("No Gallery Items")
-                            .font(.headline)
-                        Text("Import an image to get started")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-
-                        Button(action: { coordinator.showImagePicker = true }) {
-                            HStack {
-                                Image(systemName: "plus.circle.fill")
-                                Text("Import Image")
-                            }
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 32)
-                            .padding(.vertical, 12)
-                            .background(Color.blue)
-                            .cornerRadius(8)
-                        }
-                        .padding(.top, 16)
-                    }
+                    EmptyStateView(
+                        icon: "photo.on.rectangle.angled",
+                        title: "No Gallery Items",
+                        message: "Import an image to start creating pixel art.",
+                        actionLabel: "Import Image",
+                        action: { coordinator.showImagePicker = true }
+                    )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     List {
@@ -83,18 +66,18 @@ public struct GalleryListView: View {
                                         .foregroundStyle(.secondary)
                                 }
                                 .frame(width: 60, height: 60)
-                                .background(Color.gray.opacity(0.2))
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                                .background(.quaternary, in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
+                                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
 
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(item.originalName)
                                         .font(.headline)
                                     Text(item.importedDate, style: .date)
                                         .font(.caption)
-                                        .foregroundColor(.secondary)
+                                        .foregroundStyle(.secondary)
                                     Text("\(item.variants.count) variant\(item.variants.count != 1 ? "s" : "")")
                                         .font(.caption2)
-                                        .foregroundColor(.secondary)
+                                        .foregroundStyle(.secondary)
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             }
@@ -140,20 +123,22 @@ public struct GalleryListView: View {
             }
 
             // Error alert
-            .alert("Error", isPresented: .constant(coordinator.currentError != nil)) {
-                Button("OK") {
-                    coordinator.currentError = nil
-                }
+            .alert("Error", isPresented: Binding(
+                get: { coordinator.currentError != nil },
+                set: { if !$0 { coordinator.currentError = nil } }
+            )) {
+                Button("OK", role: .cancel) { coordinator.currentError = nil }
             } message: {
                 Text(coordinator.currentError ?? "")
             }
 
             // Informational alert (e.g. a duplicate import was skipped). Not an
             // error — surfaces the coordinator's non-error import message.
-            .alert("Import", isPresented: .constant(coordinator.importMessage != nil)) {
-                Button("OK") {
-                    coordinator.importMessage = nil
-                }
+            .alert("Import", isPresented: Binding(
+                get: { coordinator.importMessage != nil },
+                set: { if !$0 { coordinator.importMessage = nil } }
+            )) {
+                Button("OK", role: .cancel) { coordinator.importMessage = nil }
             } message: {
                 Text(coordinator.importMessage ?? "")
             }
