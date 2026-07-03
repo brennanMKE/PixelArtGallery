@@ -65,12 +65,19 @@ struct EmptyStateView: View {
     let message: String
     var actionLabel: String? = nil
     var action: (() -> Void)? = nil
+    /// When true, show the lively animated pixel block instead of the SF Symbol —
+    /// used for prominent first-run empty states.
+    var animatedHero: Bool = false
 
     var body: some View {
         VStack(spacing: Theme.Spacing.l) {
-            Image(systemName: icon)
-                .font(.system(size: 44))
-                .foregroundStyle(.secondary)
+            if animatedHero {
+                AnimatedPixelsView(size: 132)
+            } else {
+                Image(systemName: icon)
+                    .font(.system(size: 44))
+                    .foregroundStyle(.secondary)
+            }
             VStack(spacing: Theme.Spacing.xs) {
                 Text(title)
                     .font(.headline)

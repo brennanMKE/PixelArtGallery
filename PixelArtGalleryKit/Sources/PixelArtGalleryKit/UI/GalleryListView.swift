@@ -38,14 +38,19 @@ public struct GalleryListView: View {
 
     public var body: some View {
         NavigationStack {
-            Group {
+            ZStack {
+                BackgroundPixelsView()
+                    .ignoresSafeArea()
+
+                Group {
                 if galleryItems.isEmpty {
                     EmptyStateView(
                         icon: "photo.on.rectangle.angled",
                         title: "No Gallery Items",
                         message: "Import an image to start creating pixel art.",
                         actionLabel: "Import Image",
-                        action: { coordinator.showImagePicker = true }
+                        action: { coordinator.showImagePicker = true },
+                        animatedHero: true
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
@@ -97,6 +102,7 @@ public struct GalleryListView: View {
                             }
                         }
                     }
+                    .scrollContentBackground(.hidden)
                 }
             }
             .navigationDestination(for: GalleryItem.self) { item in
@@ -109,6 +115,9 @@ public struct GalleryListView: View {
                 }
             }
             .navigationTitle("Gallery")
+            #if os(iOS)
+            .toolbarBackground(.hidden, for: .navigationBar)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button(action: { coordinator.showImagePicker = true }) {
@@ -163,6 +172,7 @@ public struct GalleryListView: View {
             } message: {
                 Text("Enter a new name for this image.")
             }
+            }
         }
 
         // Image picker sheet. Picking surfaces the bytes plus a suggested name,
@@ -194,6 +204,7 @@ public struct GalleryListView: View {
                 }
             }
         }
+        .tint(.pixelAccent)
     }
 }
 

@@ -84,12 +84,14 @@ struct GalleryDetailView: View {
                 Text("Variants")
             }
         }
+        .scrollContentBackground(.hidden)
         .navigationTitle(item.originalName)
         .navigationDestination(for: Variant.self) { variant in
             VariantDetailView(variant: variant, coordinator: coordinator)
         }
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.hidden, for: .navigationBar)
         #endif
         .toolbar {
             ToolbarItem(placement: .primaryAction) {

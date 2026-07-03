@@ -28,7 +28,8 @@ private struct CardModifier: ViewModifier {
         content
             .padding(padding)
             .background(
-                .quaternary,
+                // Frosted material so the colorful pixel background shows through.
+                .regularMaterial,
                 in: RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
             )
     }

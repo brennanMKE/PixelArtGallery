@@ -46,6 +46,7 @@ struct VariantDetailView: View {
         .navigationTitle("Variant Details")
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.hidden, for: .navigationBar)
         #endif
         .toolbar {
             ToolbarItem(placement: .primaryAction) {

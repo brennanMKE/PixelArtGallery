@@ -49,11 +49,13 @@ struct DisplayRegistryView: View {
                         }
                     }
                 }
+                .scrollContentBackground(.hidden)
             }
         }
         .navigationTitle("Displays")
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.hidden, for: .navigationBar)
         #endif
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
