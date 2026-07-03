@@ -129,7 +129,7 @@ struct VariantDetailView: View {
         VStack(alignment: .leading, spacing: Theme.Spacing.s) {
             SectionHeader("Preview")
             PixelGridView(variant: variant)
-                .frame(height: 260)
+                .frame(height: 340)
                 .card(padding: 0)
         }
     }

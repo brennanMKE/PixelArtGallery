@@ -1,10 +1,17 @@
 import SwiftUI
 
-/// Canvas-based pixel grid renderer with zoom controls
+/// Canvas-based pixel grid renderer that fits the whole grid by default and
+/// supports zoom (pinch + buttons), pan-when-zoomed, tap-to-select, and reset.
 struct PixelGridView: View {
     @State private var viewModel: PixelGridViewModel
 
-    /// Initialize with optional variant data
+    // Gesture bookkeeping so pinch/drag accumulate from where they started.
+    @State private var zoomAtGestureStart: Double = 1.0
+    @State private var isZooming = false
+    @State private var panAtGestureStart: CGSize = .zero
+    @State private var isPanning = false
+
+    /// Initialize with optional variant data.
     init(variant: Variant? = nil) {
         if let variant = variant {
             do {
@@ -12,7 +19,6 @@ struct PixelGridView: View {
                 AppLog.gridRenderer.debug("Rendering \(model.gridWidth)×\(model.gridHeight) grid for variant \(variant.id)")
                 _viewModel = State(initialValue: model)
             } catch {
-                // Fallback to empty grid on error
                 AppLog.gridRenderer.error("Failed to load variant \(variant.id) into grid; using empty grid: \(error.localizedDescription, privacy: .public)")
                 _viewModel = State(initialValue: PixelGridViewModel())
             }
@@ -22,79 +28,85 @@ struct PixelGridView: View {
     }
 
     var body: some View {
-        VStack {
-            // Selected-pixel readout
+        VStack(spacing: Theme.Spacing.s) {
             selectionReadout
 
-            // Canvas grid
-            ScrollView([.horizontal, .vertical]) {
-                Canvas { context, size in
-                    drawPixelGrid(in: &context)
+            GeometryReader { geo in
+                let container = geo.size
+                Canvas { context, _ in
+                    drawPixelGrid(in: &context, container: container)
                 }
-                .frame(width: viewModel.displaySize.width, height: viewModel.displaySize.height)
-                #if os(iOS)
+                .frame(width: container.width, height: container.height)
                 .contentShape(Rectangle())
-                .gesture(
-                    DragGesture(minimumDistance: 0)
-                        .onEnded { value in
-                            viewModel.selectPixel(at: value.location)
-                        }
-                )
-                #elseif os(macOS)
-                .onContinuousHover { phase in
-                    switch phase {
-                    case .active(let location):
-                        viewModel.selectPixel(at: location)
-                    case .ended:
-                        viewModel.clearSelection()
-                    }
-                }
-                #endif
+                .gesture(magnifyGesture(container: container))
+                .simultaneousGesture(panGesture(container: container))
+                .simultaneousGesture(tapGesture(container: container))
+                .clipped()
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color.black.opacity(0.05))
 
-            // Zoom controls
-            HStack(spacing: 12) {
-                Button(action: viewModel.zoomOut) {
-                    Image(systemName: "minus.magnifyingglass")
-                }
-
-                Text(String(format: "%.0f%%", viewModel.zoomLevel * 100))
-                    .frame(minWidth: 60)
-
-                Button(action: viewModel.zoomIn) {
-                    Image(systemName: "plus.magnifyingglass")
-                }
-
-                Spacer()
-
-                Button(action: viewModel.resetZoom) {
-                    Text("Reset")
-                }
-            }
-            .padding()
-            .background(Color.gray.opacity(0.1))
+            zoomControls
         }
     }
+
+    // MARK: - Gestures
+
+    private func magnifyGesture(container: CGSize) -> some Gesture {
+        MagnifyGesture()
+            .onChanged { value in
+                if !isZooming {
+                    isZooming = true
+                    zoomAtGestureStart = viewModel.zoomLevel
+                }
+                viewModel.setZoom(zoomAtGestureStart * value.magnification)
+            }
+            .onEnded { _ in
+                isZooming = false
+                zoomAtGestureStart = viewModel.zoomLevel
+            }
+    }
+
+    private func panGesture(container: CGSize) -> some Gesture {
+        DragGesture(minimumDistance: 10)
+            .onChanged { value in
+                guard !viewModel.isFitToView else { return }
+                if !isPanning {
+                    isPanning = true
+                    panAtGestureStart = viewModel.clampedPan(in: container)
+                }
+                viewModel.panOffset = CGSize(
+                    width: panAtGestureStart.width + value.translation.width,
+                    height: panAtGestureStart.height + value.translation.height
+                )
+            }
+            .onEnded { _ in
+                isPanning = false
+                viewModel.panOffset = viewModel.clampedPan(in: container)
+            }
+    }
+
+    private func tapGesture(container: CGSize) -> some Gesture {
+        SpatialTapGesture()
+            .onEnded { value in
+                viewModel.selectPixel(at: value.location, in: container)
+            }
+    }
+
+    // MARK: - Selection readout
 
     /// Readout showing the coordinate and RGBA value of the selected pixel.
     @ViewBuilder
     private var selectionReadout: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: Theme.Spacing.m) {
             if let selected = viewModel.selectedPixel {
                 let color = viewModel.pixelColor(x: selected.x, y: selected.y)
-                RoundedRectangle(cornerRadius: 3)
-                    .fill(Color(
-                        red: Double(color.red) / 255.0,
-                        green: Double(color.green) / 255.0,
-                        blue: Double(color.blue) / 255.0,
-                        opacity: Double(color.alpha) / 255.0
-                    ))
+                RoundedRectangle(cornerRadius: Theme.Radius.small, style: .continuous)
+                    .fill(swiftUIColor(color))
                     .frame(width: 20, height: 20)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 3)
-                            .stroke(Color.gray.opacity(0.5), lineWidth: 0.5)
+                        RoundedRectangle(cornerRadius: Theme.Radius.small, style: .continuous)
+                            .stroke(.secondary, lineWidth: 0.5)
                     )
                 Text("(\(selected.x), \(selected.y))")
                     .font(.system(.body, design: .monospaced))
@@ -109,67 +121,98 @@ struct PixelGridView: View {
             Spacer()
         }
         .padding(.horizontal)
-        .padding(.vertical, 6)
+        .padding(.vertical, Theme.Spacing.xs)
         .frame(maxWidth: .infinity)
-        .background(Color.gray.opacity(0.08))
+        .background(.quaternary, in: RoundedRectangle(cornerRadius: Theme.Radius.small, style: .continuous))
     }
 
-    private func drawPixelGrid(in context: inout GraphicsContext) {
-        let pixelSize = viewModel.pixelSize * viewModel.zoomLevel
+    // MARK: - Zoom controls
+
+    private var zoomControls: some View {
+        HStack(spacing: Theme.Spacing.m) {
+            Button {
+                viewModel.zoomOut()
+            } label: {
+                Image(systemName: "minus.magnifyingglass")
+            }
+            .disabled(viewModel.isFitToView)
+
+            Text(String(format: "%.0f%%", viewModel.zoomLevel * 100))
+                .monospacedDigit()
+                .frame(minWidth: 60)
+
+            Button {
+                viewModel.zoomIn()
+            } label: {
+                Image(systemName: "plus.magnifyingglass")
+            }
+            .disabled(viewModel.zoomLevel >= viewModel.maxZoom)
+
+            Spacer()
+
+            Button("Size to Fit") {
+                viewModel.reset()
+            }
+            .disabled(viewModel.isFitToView && viewModel.panOffset == .zero)
+        }
+        .padding()
+        .background(.quaternary, in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
+    }
+
+    // MARK: - Drawing
+
+    private func swiftUIColor(_ c: PixelColor) -> Color {
+        Color(
+            red: Double(c.red) / 255.0,
+            green: Double(c.green) / 255.0,
+            blue: Double(c.blue) / 255.0,
+            opacity: Double(c.alpha) / 255.0
+        )
+    }
+
+    private func drawPixelGrid(in context: inout GraphicsContext, container: CGSize) {
+        let cell = viewModel.cellSize(in: container)
+        guard cell > 0 else { return }
+        let origin = viewModel.origin(in: container)
 
         for y in 0..<viewModel.gridHeight {
+            let cellY = origin.y + CGFloat(y) * cell
+            if cellY + cell < 0 || cellY > container.height { continue } // cull off-screen rows
             for x in 0..<viewModel.gridWidth {
-                let rect = CGRect(
-                    x: CGFloat(x) * pixelSize,
-                    y: CGFloat(y) * pixelSize,
-                    width: pixelSize,
-                    height: pixelSize
-                )
-
-                // Get actual pixel color from data
-                let pixelColor = viewModel.pixelColor(x: x, y: y)
-                let swiftUIColor = Color(
-                    red: Double(pixelColor.red) / 255.0,
-                    green: Double(pixelColor.green) / 255.0,
-                    blue: Double(pixelColor.blue) / 255.0,
-                    opacity: Double(pixelColor.alpha) / 255.0
-                )
-
-                context.fill(Path(rect), with: .color(swiftUIColor))
+                let cellX = origin.x + CGFloat(x) * cell
+                if cellX + cell < 0 || cellX > container.width { continue } // cull off-screen columns
+                let rect = CGRect(x: cellX, y: cellY, width: cell, height: cell)
+                context.fill(Path(rect), with: .color(swiftUIColor(viewModel.pixelColor(x: x, y: y))))
             }
         }
 
-        // Draw grid lines as a single batched path (O(w+h) strokes, not O(w·h)),
-        // and only when cells are large enough that lines read as a grid rather
-        // than swamping the art on big low-zoom grids.
-        if pixelSize >= 6 {
-            let totalWidth = CGFloat(viewModel.gridWidth) * pixelSize
-            let totalHeight = CGFloat(viewModel.gridHeight) * pixelSize
-            var gridLines = Path()
+        // Grid lines only when cells are large enough to read as a grid.
+        if cell >= 6 {
+            let content = viewModel.contentSize(in: container)
+            var lines = Path()
             for x in 0...viewModel.gridWidth {
-                let xp = CGFloat(x) * pixelSize
-                gridLines.move(to: CGPoint(x: xp, y: 0))
-                gridLines.addLine(to: CGPoint(x: xp, y: totalHeight))
+                let xp = origin.x + CGFloat(x) * cell
+                lines.move(to: CGPoint(x: xp, y: origin.y))
+                lines.addLine(to: CGPoint(x: xp, y: origin.y + content.height))
             }
             for y in 0...viewModel.gridHeight {
-                let yp = CGFloat(y) * pixelSize
-                gridLines.move(to: CGPoint(x: 0, y: yp))
-                gridLines.addLine(to: CGPoint(x: totalWidth, y: yp))
+                let yp = origin.y + CGFloat(y) * cell
+                lines.move(to: CGPoint(x: origin.x, y: yp))
+                lines.addLine(to: CGPoint(x: origin.x + content.width, y: yp))
             }
-            context.stroke(gridLines, with: .color(.gray.opacity(0.3)), lineWidth: 0.5)
+            context.stroke(lines, with: .color(.gray.opacity(0.3)), lineWidth: 0.5)
         }
 
-        // Highlight the selected cell on top of the grid
+        // Selected-cell highlight.
         if let selected = viewModel.selectedPixel {
             let rect = CGRect(
-                x: CGFloat(selected.x) * pixelSize,
-                y: CGFloat(selected.y) * pixelSize,
-                width: pixelSize,
-                height: pixelSize
+                x: origin.x + CGFloat(selected.x) * cell,
+                y: origin.y + CGFloat(selected.y) * cell,
+                width: cell,
+                height: cell
             )
-            let highlight = Path(roundedRect: rect, cornerRadius: 0)
-            context.stroke(highlight, with: .color(.yellow), lineWidth: max(2, pixelSize * 0.1))
-            context.stroke(highlight, with: .color(.black), lineWidth: 1)
+            context.stroke(Path(rect), with: .color(.yellow), lineWidth: max(2, cell * 0.15))
+            context.stroke(Path(rect), with: .color(.black), lineWidth: 1)
         }
     }
 }

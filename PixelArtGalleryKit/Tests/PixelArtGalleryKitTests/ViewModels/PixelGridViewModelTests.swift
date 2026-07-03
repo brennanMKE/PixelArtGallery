@@ -4,44 +4,71 @@ import CoreGraphics
 
 @MainActor
 final class PixelGridViewModelTests: XCTestCase {
-    /// A point inside the grid maps to the cell whose origin contains it,
-    /// at the default zoom level (1.0).
-    func testGridCoordinateAtDefaultZoom() {
+    /// A square grid in a square container fits exactly: cell = container / gridSize,
+    /// centered (origin zero), so points map straight to cells.
+    func testGridCoordinateFitsAndMapsPoints() {
         let vm = PixelGridViewModel(gridWidth: 32, gridHeight: 32)
-        // pixelSize == 20, zoom == 1.0 -> 20pt per cell.
-        XCTAssertTrue(vm.gridCoordinate(at: CGPoint(x: 0, y: 0)).map { $0 == (0, 0) } ?? false)
-        XCTAssertTrue(vm.gridCoordinate(at: CGPoint(x: 25, y: 45)).map { $0 == (1, 2) } ?? false)
-        XCTAssertTrue(vm.gridCoordinate(at: CGPoint(x: 19.9, y: 19.9)).map { $0 == (0, 0) } ?? false)
-        XCTAssertTrue(vm.gridCoordinate(at: CGPoint(x: 20, y: 20)).map { $0 == (1, 1) } ?? false)
+        let container = CGSize(width: 320, height: 320) // 10pt per cell at fit.
+        XCTAssertEqual(vm.cellSize(in: container), 10, accuracy: 0.001)
+        XCTAssertTrue(vm.gridCoordinate(at: CGPoint(x: 0, y: 0), in: container).map { $0 == (0, 0) } ?? false)
+        XCTAssertTrue(vm.gridCoordinate(at: CGPoint(x: 15, y: 25), in: container).map { $0 == (1, 2) } ?? false)
+        XCTAssertTrue(vm.gridCoordinate(at: CGPoint(x: 9.9, y: 9.9), in: container).map { $0 == (0, 0) } ?? false)
+        XCTAssertTrue(vm.gridCoordinate(at: CGPoint(x: 10, y: 10), in: container).map { $0 == (1, 1) } ?? false)
     }
 
-    /// Zoom scales the per-cell size, so the same point lands in a different cell.
-    func testGridCoordinateRespectsZoom() {
-        let vm = PixelGridViewModel(gridWidth: 32, gridHeight: 32)
-        vm.zoomLevel = 2.0
-        // 40pt per cell now.
-        XCTAssertTrue(vm.gridCoordinate(at: CGPoint(x: 50, y: 90)).map { $0 == (1, 2) } ?? false)
-        XCTAssertTrue(vm.gridCoordinate(at: CGPoint(x: 39, y: 39)).map { $0 == (0, 0) } ?? false)
+    /// A non-square grid keeps its aspect ratio: it fits the limiting axis and is
+    /// centered on the other, so the whole image is always visible.
+    func testNonSquareGridFitsWithLetterboxing() {
+        let vm = PixelGridViewModel(gridWidth: 45, gridHeight: 35)
+        let container = CGSize(width: 450, height: 450)
+        // Width is the limiting axis: 450/45 = 10pt per cell; content = 450×350.
+        XCTAssertEqual(vm.cellSize(in: container), 10, accuracy: 0.001)
+        let content = vm.contentSize(in: container)
+        XCTAssertEqual(content.width, 450, accuracy: 0.001)
+        XCTAssertEqual(content.height, 350, accuracy: 0.001)
+        // Vertically centered: origin.y = (450 - 350)/2 = 50.
+        XCTAssertEqual(vm.origin(in: container).y, 50, accuracy: 0.001)
+        XCTAssertEqual(vm.origin(in: container).x, 0, accuracy: 0.001)
     }
 
-    /// Points outside the grid bounds (negative or past the edge) map to nil.
+    /// Zoom scales the cell size; at fit (1.0) panning is disabled and content centered.
+    func testZoomClampsAndControlsPan() {
+        let vm = PixelGridViewModel(gridWidth: 10, gridHeight: 10)
+        XCTAssertTrue(vm.isFitToView)
+        vm.zoomOut() // can't go below fit
+        XCTAssertEqual(vm.zoomLevel, vm.minZoom, accuracy: 0.001)
+
+        vm.zoomIn()
+        XCTAssertGreaterThan(vm.zoomLevel, 1.0)
+        XCTAssertFalse(vm.isFitToView)
+
+        vm.setZoom(1000) // clamps to max
+        XCTAssertEqual(vm.zoomLevel, vm.maxZoom, accuracy: 0.001)
+
+        vm.reset()
+        XCTAssertEqual(vm.zoomLevel, 1.0, accuracy: 0.001)
+        XCTAssertEqual(vm.panOffset, .zero)
+    }
+
+    /// Points outside the grid map to nil.
     func testGridCoordinateOutOfBoundsReturnsNil() {
         let vm = PixelGridViewModel(gridWidth: 4, gridHeight: 4)
-        XCTAssertNil(vm.gridCoordinate(at: CGPoint(x: -1, y: 5)))
-        XCTAssertNil(vm.gridCoordinate(at: CGPoint(x: 5, y: -1)))
-        // 4 cells * 20pt = 80pt; x=80 is the start of cell index 4, out of range.
-        XCTAssertNil(vm.gridCoordinate(at: CGPoint(x: 80, y: 0)))
-        XCTAssertNil(vm.gridCoordinate(at: CGPoint(x: 0, y: 80)))
+        let container = CGSize(width: 80, height: 80) // 20pt per cell.
+        XCTAssertNil(vm.gridCoordinate(at: CGPoint(x: -1, y: 5), in: container))
+        XCTAssertNil(vm.gridCoordinate(at: CGPoint(x: 5, y: -1), in: container))
+        XCTAssertNil(vm.gridCoordinate(at: CGPoint(x: 80, y: 0), in: container)) // start of cell 4
+        XCTAssertNil(vm.gridCoordinate(at: CGPoint(x: 0, y: 80), in: container))
     }
 
     /// selectPixel(at:) selects an in-bounds pixel and clears for out-of-bounds.
     func testSelectPixelAtPoint() {
         let vm = PixelGridViewModel(gridWidth: 8, gridHeight: 8)
-        vm.selectPixel(at: CGPoint(x: 25, y: 45)) // -> (1, 2)
+        let container = CGSize(width: 80, height: 80) // 10pt per cell.
+        vm.selectPixel(at: CGPoint(x: 15, y: 25), in: container) // -> (1, 2)
         XCTAssertEqual(vm.selectedPixel?.x, 1)
         XCTAssertEqual(vm.selectedPixel?.y, 2)
 
-        vm.selectPixel(at: CGPoint(x: -5, y: -5)) // out of bounds -> cleared
+        vm.selectPixel(at: CGPoint(x: -5, y: -5), in: container) // out of bounds -> cleared
         XCTAssertNil(vm.selectedPixel)
     }
 }
