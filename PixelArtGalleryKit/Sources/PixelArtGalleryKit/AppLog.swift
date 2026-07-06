@@ -47,6 +47,8 @@ nonisolated enum AppLog {
         case export = "Export"
         /// Pixel grid rendering in the UI.
         case gridRenderer = "GridRenderer"
+        /// Sparkle auto-update lifecycle on macOS (`UpdaterController`).
+        case updates = "Updates"
     }
 
     /// Gallery item lifecycle.
@@ -61,4 +63,6 @@ nonisolated enum AppLog {
     static let export = Logger(subsystem: subsystem, category: Category.export.rawValue)
     /// Pixel grid rendering.
     static let gridRenderer = Logger(subsystem: subsystem, category: Category.gridRenderer.rawValue)
+    /// Sparkle auto-update lifecycle (macOS).
+    static let updates = Logger(subsystem: subsystem, category: Category.updates.rawValue)
 }

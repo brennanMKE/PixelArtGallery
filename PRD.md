@@ -136,7 +136,7 @@ A macOS/iOS application that transforms images into pixel art and organizes them
 
 ### Logging
 - **Structured Logging**: Use `os.log` (unified logging system)
-- **Categories**: `Gallery`, `ImageProcessor`, `Variant`, `FTDiscovery`, `Export`, `GridRenderer`
+- **Categories**: `Gallery`, `ImageProcessor`, `Variant`, `FTDiscovery`, `Export`, `GridRenderer`, `Updates`
 - **Levels**: `debug` for tracing, `info` for events, `warning`/`error` for issues
 
 ### Export & Send

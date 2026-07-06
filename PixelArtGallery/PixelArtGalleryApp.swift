@@ -68,6 +68,22 @@ struct PixelArtGalleryApp: App {
         .modelContainer(modelContainer)
         #if os(macOS)
         .defaultSize(width: 1000, height: 700)
+        // App menu: replace the standard About item so a divider and
+        // "Check for Updates…" (Sparkle, #0038) sit directly beneath it. The
+        // update item stays disabled until the Sparkle feed URL is wired
+        // into Info.plist (#0039).
+        .commands {
+            CommandGroup(replacing: .appInfo) {
+                Button("About Pixel Art Gallery") {
+                    NSApplication.shared.orderFrontStandardAboutPanel(nil)
+                }
+                Divider()
+                Button("Check for Updates…") {
+                    UpdaterController.shared.checkForUpdates()
+                }
+                .disabled(!UpdaterController.shared.isConfigured)
+            }
+        }
         #endif
 
         // macOS Settings scene (Pixel Art Gallery ▸ Settings…, ⌘,) editing the

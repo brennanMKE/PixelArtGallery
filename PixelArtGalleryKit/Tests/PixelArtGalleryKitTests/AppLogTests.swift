@@ -7,7 +7,7 @@ final class AppLogTests: XCTestCase {
         let categories = Set(AppLog.Category.allCases.map(\.rawValue))
         XCTAssertEqual(
             categories,
-            ["Gallery", "ImageProcessor", "Variant", "FTDiscovery", "Export", "GridRenderer"]
+            ["Gallery", "ImageProcessor", "Variant", "FTDiscovery", "Export", "GridRenderer", "Updates"]
         )
     }
 
