@@ -57,6 +57,9 @@ Use these canonical area names in the **Module** row:
 - `UI` — SwiftUI views in `PixelArtGalleryKit/Sources/PixelArtGalleryKit/UI`
 - `Networking` — FT display mDNS discovery and the send client
 - `Export` — variant exporters (PNG / HEIC / PPM / JSON) and Photos integration
+- `Build` — project/build configuration, release pipeline scripts, signing/notarization
+- `Website` — the static site (`website/`): landing page, changelog, appcast, downloads
+- `Docs` — release documentation, checklists, project docs
 
 ## Issue format
 
