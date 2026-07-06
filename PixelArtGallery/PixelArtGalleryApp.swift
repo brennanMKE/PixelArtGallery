@@ -61,7 +61,13 @@ struct PixelArtGalleryApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                #if os(macOS)
+                .frame(minWidth: 640, minHeight: 480)
+                #endif
         }
         .modelContainer(modelContainer)
+        #if os(macOS)
+        .defaultSize(width: 1000, height: 700)
+        #endif
     }
 }
