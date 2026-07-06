@@ -34,10 +34,12 @@ struct ImportNamingView: View {
         NavigationStack {
             Form {
                 Section("Name") {
-                    TextField(defaultImportedImageName, text: $name)
+                    TextField(defaultImportedImageName, text: $name, prompt: Text(defaultImportedImageName))
                         .textFieldStyle(.roundedBorder)
                         #if os(iOS)
                         .textInputAutocapitalization(.words)
+                        #else
+                        .labelsHidden()
                         #endif
                 }
 
@@ -51,6 +53,7 @@ struct ImportNamingView: View {
                     }
                 }
             }
+            .formStyle(.grouped)
             .navigationTitle("Name Image")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
@@ -71,6 +74,12 @@ struct ImportNamingView: View {
                 }
             }
         }
+        #if os(macOS)
+        // Sheets on macOS don't size themselves to a Form's content; without an
+        // explicit frame the sheet collapses and the form rows are invisible (#0026,
+        // same defect as #0024/#0025). Short sheet — just the Name field + About hint.
+        .frame(minWidth: 440, minHeight: 300)
+        #endif
     }
 }
 
