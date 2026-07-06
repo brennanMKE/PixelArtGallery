@@ -4,7 +4,8 @@ import AppKit
 import UniformTypeIdentifiers
 #endif
 
-/// View for exporting pixel art variants with format selection and file location picker
+/// View for exporting pixel art variants with format selection. On macOS the Export
+/// action presents a save panel and writes on confirmation; iOS routes to Photos/Files.
 struct ExportPickerView: View {
     let variant: Variant
     let onExport: (String, URL) -> Void
@@ -18,9 +19,6 @@ struct ExportPickerView: View {
     @State private var selectedFormat = "PNG"
     @State private var isExporting = false
     @State private var exportError: String?
-    #if os(macOS)
-    @State private var selectedFileURL: URL?
-    #endif
     #if os(iOS)
     @State private var documentExportURL: IdentifiableURL?
     #endif
@@ -42,6 +40,9 @@ struct ExportPickerView: View {
                     }
                 }
         }
+        #if os(macOS)
+        .frame(minWidth: 440, minHeight: 280)
+        #endif
     }
 
     private var content: some View {
@@ -71,36 +72,7 @@ struct ExportPickerView: View {
                     .foregroundStyle(.secondary)
             }
 
-            #if os(macOS)
-            // File location info (macOS uses an explicit save-panel location)
-            VStack(alignment: .leading, spacing: 8) {
-                if let url = selectedFileURL {
-                    Text("Save Location")
-                        .font(.headline)
-                    HStack {
-                        Image(systemName: "doc")
-                            .foregroundStyle(.blue)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(url.lastPathComponent)
-                                .font(.caption)
-                                .fontWeight(.semibold)
-                            Text(url.deletingLastPathComponent().path)
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
-                        Spacer()
-                    }
-                    .padding(8)
-                    .background(Color.gray.opacity(0.1))
-                    .cornerRadius(6)
-                } else {
-                    Text("No location selected")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            #else
+            #if os(iOS)
             // iOS routes to Photos (raster) or the Files document picker — no file path to show.
             VStack(alignment: .leading, spacing: 8) {
                 Text("Save Destination")
@@ -118,35 +90,24 @@ struct ExportPickerView: View {
 
             // Action buttons
             #if os(macOS)
-            HStack(spacing: 12) {
-                Button(action: showSavePanel) {
+            Button(action: exportWithSavePanel) {
+                if isExporting {
                     HStack {
-                        Image(systemName: "folder")
-                        Text("Choose Location")
+                        ProgressView()
+                            .scaleEffect(0.8)
+                        Text("Exporting...")
+                    }
+                    .frame(maxWidth: .infinity)
+                } else {
+                    HStack {
+                        Image(systemName: "arrow.down.doc")
+                        Text("Export")
                     }
                     .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.bordered)
-                .disabled(isExporting)
-
-                Button(action: performExport) {
-                    if isExporting {
-                        HStack {
-                            ProgressView()
-                                .scaleEffect(0.8)
-                            Text("Exporting...")
-                        }
-                    } else {
-                        HStack {
-                            Image(systemName: "arrow.down.doc")
-                            Text("Export")
-                        }
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .buttonStyle(.borderedProminent)
-                .disabled(isExporting || selectedFileURL == nil)
             }
+            .buttonStyle(.borderedProminent)
+            .disabled(isExporting)
             #else
             VStack(spacing: 12) {
                 if canSaveToPhotos {
@@ -230,19 +191,28 @@ struct ExportPickerView: View {
     }
 
     #if os(macOS)
-    private func showSavePanel() {
-        DispatchQueue.main.async {
-            let panel = NSSavePanel()
-            panel.allowedContentTypes = [uniformTypeForFormat()]
-            panel.nameFieldStringValue = "variant-\(variant.id.uuidString.prefix(8)).\(fileExtension)"
-            panel.message = "Choose a location to save your pixelated image"
+    /// Present the save panel for the currently selected format and, on confirmation,
+    /// export directly to the chosen URL — the standard one-step macOS export flow.
+    private func exportWithSavePanel() {
+        guard let format = ExportFormat(name: selectedFormat) else {
+            exportError = "Unsupported format: \(selectedFormat)"
+            return
+        }
 
-            panel.begin { response in
-                if response == .OK, let url = panel.url {
-                    selectedFileURL = url
-                    AppLog.export.debug("User selected save location: \(url.path, privacy: .public)")
-                }
-            }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [uniformTypeForFormat()]
+        panel.nameFieldStringValue = "variant-\(variant.id.uuidString.prefix(8)).\(fileExtension)"
+        panel.message = "Choose a location to save your pixelated image"
+
+        let completion: (NSApplication.ModalResponse) -> Void = { response in
+            guard response == .OK, let url = panel.url else { return }
+            performExport(format: format, to: url)
+        }
+
+        if let window = NSApp.keyWindow {
+            panel.beginSheetModal(for: window, completionHandler: completion)
+        } else {
+            panel.begin(completionHandler: completion)
         }
     }
     #endif
@@ -354,16 +324,7 @@ struct ExportPickerView: View {
     #endif
 
     #if os(macOS)
-    private func performExport() {
-        guard let fileURL = selectedFileURL else {
-            exportError = "Please select a save location"
-            return
-        }
-        guard let format = ExportFormat(name: selectedFormat) else {
-            exportError = "Unsupported format: \(selectedFormat)"
-            return
-        }
-
+    private func performExport(format: ExportFormat, to fileURL: URL) {
         isExporting = true
         exportError = nil
 
