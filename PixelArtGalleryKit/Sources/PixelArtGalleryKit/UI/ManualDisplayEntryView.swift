@@ -115,9 +115,12 @@ struct ManualDisplayEntryView: View {
                     HStack {
                         Text("Host")
                         Spacer()
-                        TextField("192.168.1.50", text: $host)
+                        TextField("192.168.1.50", text: $host, prompt: Text("192.168.1.50"))
                             .textFieldStyle(.roundedBorder)
                             .multilineTextAlignment(.trailing)
+                            #if os(macOS)
+                            .labelsHidden()
+                            #endif
                             #if os(iOS)
                             .keyboardType(.URL)
                             .textInputAutocapitalization(.never)
@@ -128,8 +131,11 @@ struct ManualDisplayEntryView: View {
                     HStack {
                         Text("Port")
                         Spacer()
-                        TextField("1337", text: $port)
+                        TextField("1337", text: $port, prompt: Text("1337"))
                             .textFieldStyle(.roundedBorder)
+                            #if os(macOS)
+                            .labelsHidden()
+                            #endif
                             #if os(iOS)
                             .keyboardType(.numberPad)
                             #endif
@@ -141,16 +147,22 @@ struct ManualDisplayEntryView: View {
                     HStack {
                         Text("Name")
                         Spacer()
-                        TextField("Office Wall", text: $displayName)
+                        TextField("Office Wall", text: $displayName, prompt: Text("Office Wall"))
                             .textFieldStyle(.roundedBorder)
                             .multilineTextAlignment(.trailing)
+                            #if os(macOS)
+                            .labelsHidden()
+                            #endif
                     }
 
                     HStack {
                         Text("Width (pixels)")
                         Spacer()
-                        TextField("64", text: $width)
+                        TextField("64", text: $width, prompt: Text("64"))
                             .textFieldStyle(.roundedBorder)
+                            #if os(macOS)
+                            .labelsHidden()
+                            #endif
                             #if os(iOS)
                             .keyboardType(.numberPad)
                             #endif
@@ -160,8 +172,11 @@ struct ManualDisplayEntryView: View {
                     HStack {
                         Text("Height (pixels)")
                         Spacer()
-                        TextField("64", text: $height)
+                        TextField("64", text: $height, prompt: Text("64"))
                             .textFieldStyle(.roundedBorder)
+                            #if os(macOS)
+                            .labelsHidden()
+                            #endif
                             #if os(iOS)
                             .keyboardType(.numberPad)
                             #endif
@@ -187,6 +202,7 @@ struct ManualDisplayEntryView: View {
                     }
                 }
             }
+            .formStyle(.grouped)
             .navigationTitle("Add Display")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
@@ -206,6 +222,9 @@ struct ManualDisplayEntryView: View {
                 }
             }
         }
+        #if os(macOS)
+        .frame(minWidth: 440, minHeight: 520)
+        #endif
     }
 
     private func addDisplay() {
