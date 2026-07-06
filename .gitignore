@@ -35,6 +35,10 @@ Screenshots/
 .ipa
 .app
 
+# Release pipeline (issue #0037)
+dist/
+*.xcarchive
+
 # CocoaPods
 Pods/
 Podfile.lock
