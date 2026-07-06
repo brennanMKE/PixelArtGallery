@@ -245,6 +245,28 @@ final class GalleryCoordinatorTests: XCTestCase {
         XCTAssertEqual(item.originalName, original, "Whitespace-only name should be ignored")
     }
 
+    // MARK: - Pinning (#0035)
+
+    func testTogglePinFlipsAndPersistsPinnedState() async throws {
+        let context = try makeContext()
+        let coordinator = try makeCoordinator()
+        coordinator.configure(modelContext: context)
+
+        let item = try await makeItem(in: context, coordinator: coordinator)
+        XCTAssertFalse(item.isPinned, "A freshly imported item should be unpinned")
+
+        coordinator.togglePin(item)
+        XCTAssertTrue(item.isPinned, "First toggle should pin the item")
+
+        // Re-fetch from the context to confirm the change was saved, not just
+        // mutated on the in-memory object.
+        let refetched = try XCTUnwrap(try context.fetch(FetchDescriptor<GalleryItem>()).first)
+        XCTAssertTrue(refetched.isPinned, "Pinned state must persist through the ModelContext")
+
+        coordinator.togglePin(item)
+        XCTAssertFalse(item.isPinned, "Second toggle should unpin the item")
+    }
+
     func testEffectiveImportedImageNameDefaulting() {
         // Filename with extension → base name.
         XCTAssertEqual(effectiveImportedImageName(from: "sunset.png"), "sunset")

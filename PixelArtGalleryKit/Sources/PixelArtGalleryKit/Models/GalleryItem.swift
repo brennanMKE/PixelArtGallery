@@ -32,6 +32,13 @@ public final class GalleryItem {
     /// Timestamp when this image was imported into the gallery
     public var importedDate: Date
 
+    /// Whether this item is pinned to the front of the gallery grid (#0035).
+    ///
+    /// Pinned items always lead the grid regardless of the user's chosen sort
+    /// order. Defaults to `false` so records persisted before this attribute
+    /// existed continue to load via SwiftData lightweight migration.
+    public var isPinned: Bool = false
+
     /// Array of variants created from this original image
     /// Relationship: Cascade delete—removing a GalleryItem removes all its variants
     @Relationship(deleteRule: .cascade, inverse: \Variant.galleryItem) public var variants: [Variant] = []

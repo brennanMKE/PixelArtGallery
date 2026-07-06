@@ -589,6 +589,25 @@ final class GalleryCoordinator {
         }
     }
 
+    /// Toggle a gallery item's pinned state so it leads (or rejoins) the
+    /// gallery grid (#0035). Mirrors ``renameGalleryItem(_:to:)``.
+    /// - Parameter item: The gallery item whose pin to flip.
+    func togglePin(_ item: GalleryItem) {
+        guard let modelContext else {
+            AppLog.gallery.error("togglePin called before a ModelContext was configured")
+            return
+        }
+
+        item.isPinned.toggle()
+        do {
+            try modelContext.save()
+            AppLog.gallery.info("Set isPinned=\(item.isPinned) for gallery item \(item.id)")
+        } catch {
+            currentError = error.localizedDescription
+            AppLog.gallery.error("Failed to toggle pin for gallery item \(item.id): \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
     /// Delete a gallery item, removing it (and its variants via cascade) from
     /// the SwiftData context.
     func deleteGalleryItem(_ item: GalleryItem) {

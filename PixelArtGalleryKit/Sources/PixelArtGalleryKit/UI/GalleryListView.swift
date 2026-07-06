@@ -40,8 +40,27 @@ public struct GalleryListView: View {
     #endif
 
     /// Live, auto-updating gallery items sourced directly from SwiftData.
-    /// The view owns the query; the coordinator only handles mutations.
+    /// The view owns the query; the coordinator only handles mutations. The
+    /// query keeps a stable newest-first base sort; the user-facing ordering
+    /// (pinned first, then the chosen sort) is applied in-memory via
+    /// ``GallerySortOrder/sortedForGallery(_:)`` (#0035).
     @Query(sort: \GalleryItem.importedDate, order: .reverse) private var galleryItems: [GalleryItem]
+
+    /// The user's chosen sort for unpinned items, persisted across launches.
+    /// Stored as the raw value so `@AppStorage` can hold it directly.
+    @AppStorage("gallerySortOrder") private var sortOrderRawValue: String = GallerySortOrder.newestFirst.rawValue
+
+    /// The current sort order, falling back to newest-first if the stored raw
+    /// value is stale or unknown.
+    private var sortOrder: GallerySortOrder {
+        GallerySortOrder(rawValue: sortOrderRawValue) ?? .newestFirst
+    }
+
+    /// Gallery items in display order: pinned items lead, then the rest in the
+    /// user's chosen sort.
+    private var sortedItems: [GalleryItem] {
+        sortOrder.sortedForGallery(galleryItems)
+    }
 
     public init() {}
 
@@ -73,12 +92,20 @@ public struct GalleryListView: View {
                             alignment: .leading,
                             spacing: Theme.Spacing.m
                         ) {
-                            ForEach(galleryItems) { item in
+                            ForEach(sortedItems) { item in
                                 NavigationLink(value: item) {
                                     galleryCell(for: item)
                                 }
                                 .buttonStyle(.plain)
                                 .contextMenu {
+                                    Button {
+                                        coordinator.togglePin(item)
+                                    } label: {
+                                        Label(
+                                            item.isPinned ? "Unpin" : "Pin",
+                                            systemImage: item.isPinned ? "pin.slash" : "pin"
+                                        )
+                                    }
                                     Button {
                                         renameText = item.originalName
                                         itemToRename = item
@@ -114,6 +141,19 @@ public struct GalleryListView: View {
                 ToolbarItem(placement: .primaryAction) {
                     Button(action: { coordinator.showImagePicker = true }) {
                         Image(systemName: "plus")
+                    }
+                }
+                // Sort menu for the unpinned items; the current choice shows a
+                // checkmark and persists across launches via AppStorage.
+                ToolbarItem(placement: .secondaryAction) {
+                    Menu {
+                        Picker("Sort By", selection: $sortOrderRawValue) {
+                            ForEach(GallerySortOrder.allCases, id: \.rawValue) { order in
+                                Text(order.displayName).tag(order.rawValue)
+                            }
+                        }
+                    } label: {
+                        Label("Sort", systemImage: "arrow.up.arrow.down")
                     }
                 }
                 ToolbarItem(placement: .secondaryAction) {
@@ -306,6 +346,18 @@ public struct GalleryListView: View {
                 }
                 .background(.quaternary)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+                // Pin badge: a small filled pin on a material circle so it
+                // stays legible over any thumbnail (#0035).
+                .overlay(alignment: .topTrailing) {
+                    if item.isPinned {
+                        Image(systemName: "pin.fill")
+                            .font(.caption)
+                            .padding(Theme.Spacing.xs + 2)
+                            .background(.ultraThinMaterial, in: Circle())
+                            .shadow(radius: 1, y: 1)
+                            .padding(Theme.Spacing.xs)
+                    }
+                }
 
             VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
                 Text(item.originalName)
