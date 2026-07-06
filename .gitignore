@@ -7,6 +7,9 @@ DerivedData/
 *.xcworkspace/xcuserdata/
 *.xcworkspace/xcshareddata/
 
+# Screenshots
+Screenshots/
+
 # Swift Package Manager
 .build/
 .swiftpm/xcode/package.xcworkspace/xcuserdata/
