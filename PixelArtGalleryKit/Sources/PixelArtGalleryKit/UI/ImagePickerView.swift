@@ -22,40 +22,9 @@ nonisolated func effectiveImportedImageName(from suggestedName: String?) -> Stri
     return trimmed.isEmpty ? defaultImportedImageName : trimmed
 }
 
-#if canImport(AppKit)
-import AppKit
-
-/// macOS file picker for selecting images
-struct ImagePickerView: NSViewControllerRepresentable {
-    @Environment(\.dismiss) var dismiss
-    /// Called with the selected image bytes and, when available, a suggested
-    /// name derived from the chosen file (its base filename, sans extension).
-    var onImageSelected: (Data, String?) -> Void
-
-    func makeNSViewController(context: Context) -> NSViewController {
-        let controller = NSViewController()
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.image]
-        panel.allowsMultipleSelection = false
-        panel.message = "Select an image to import"
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            if panel.runModal() == .OK, let url = panel.urls.first {
-                if let imageData = try? Data(contentsOf: url) {
-                    let suggestedName = url.deletingPathExtension().lastPathComponent
-                    onImageSelected(imageData, suggestedName)
-                }
-            }
-            dismiss()
-        }
-
-        return controller
-    }
-
-    func updateNSViewController(_ nsViewController: NSViewController, context: Context) {}
-}
-
-#elseif canImport(UIKit)
+// On macOS the gallery uses SwiftUI's `.fileImporter` directly (see
+// `GalleryListView`), so no picker view is needed there.
+#if canImport(UIKit)
 import UIKit
 import PhotosUI
 

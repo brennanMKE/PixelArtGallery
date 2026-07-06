@@ -1,5 +1,6 @@
 import SwiftData
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Non-model navigation destinations reachable from the gallery's nav stack.
 /// Model-backed pushes (a `GalleryItem`) use their own `navigationDestination`.
@@ -203,14 +204,45 @@ public struct GalleryListView: View {
             }
         }
 
-        // Image picker sheet. Picking surfaces the bytes plus a suggested name,
+        // Image picker. Picking surfaces the bytes plus a suggested name,
         // which we hold as a pending import so the user can confirm/edit the name
         // before it's saved.
+        #if os(iOS)
+        // iOS: PHPicker presented in a sheet.
         .sheet(isPresented: $coordinator.showImagePicker) {
             ImagePickerView { imageData, suggestedName in
                 pendingImport = PendingImport(imageData: imageData, suggestedName: suggestedName)
             }
         }
+        #elseif os(macOS)
+        // macOS: the native file chooser, presented directly — no intermediate
+        // sheet and no main-thread-blocking `NSOpenPanel.runModal()`.
+        .fileImporter(
+            isPresented: $coordinator.showImagePicker,
+            allowedContentTypes: [.image]
+        ) { result in
+            switch result {
+            case .success(let url):
+                // The app is sandboxed (user-selected-file read-only), so the
+                // URL must be accessed within a security scope.
+                let didStartAccess = url.startAccessingSecurityScopedResource()
+                defer {
+                    if didStartAccess { url.stopAccessingSecurityScopedResource() }
+                }
+                do {
+                    let imageData = try Data(contentsOf: url)
+                    pendingImport = PendingImport(
+                        imageData: imageData,
+                        suggestedName: url.deletingPathExtension().lastPathComponent
+                    )
+                } catch {
+                    coordinator.currentError = "Could not read the selected image: \(error.localizedDescription)"
+                }
+            case .failure(let error):
+                coordinator.currentError = error.localizedDescription
+            }
+        }
+        #endif
 
         // Import naming sheet — prefilled with the suggested name.
         .sheet(item: $pendingImport) { pending in
