@@ -42,6 +42,8 @@ struct VariantEditDimensionsView: View {
                             .textFieldStyle(.roundedBorder)
                             #if os(iOS)
                             .keyboardType(.numberPad)
+                            #else
+                            .labelsHidden()
                             #endif
                             .frame(width: 100)
                     }
@@ -53,6 +55,8 @@ struct VariantEditDimensionsView: View {
                             .textFieldStyle(.roundedBorder)
                             #if os(iOS)
                             .keyboardType(.numberPad)
+                            #else
+                            .labelsHidden()
                             #endif
                             .frame(width: 100)
                     }
@@ -83,6 +87,7 @@ struct VariantEditDimensionsView: View {
                     }
                 }
             }
+            .formStyle(.grouped)
             .navigationTitle("Edit Dimensions")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
@@ -106,6 +111,12 @@ struct VariantEditDimensionsView: View {
                 }
             }
         }
+        #if os(macOS)
+        // Sheets on macOS don't size themselves to a Form's content; without an
+        // explicit frame the sheet collapses and the form rows are invisible (#0025,
+        // same defect as #0024). Smaller than Create Variant — no display picker here.
+        .frame(minWidth: 440, minHeight: 360)
+        #endif
     }
 
     private func save() {
