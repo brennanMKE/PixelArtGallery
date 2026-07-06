@@ -186,6 +186,9 @@ if [ "$DRY_RUN" -eq 1 ]; then
   echo ""
   echo "Skipped: notarization, stapling, DMG creation, and DMG verification."
   echo "Run scripts/release.sh (no flags) for the full release."
+  echo ""
+  echo "No DMG was produced, so no appcast item was generated. After a full"
+  echo "release, run: scripts/appcast-item.sh $DMG_PATH"
   exit 0
 fi
 
@@ -268,3 +271,9 @@ echo "Next steps:"
 echo "  1. Test-install on a clean Mac (download via a browser so it is quarantined)."
 echo "  2. Upload $DMG_PATH to the website downloads (see website/, issue tracker)."
 echo "  3. Tag the release: git tag v$MARKETING_VERSION-$BUILD_NUMBER"
+
+# --------------------------------------------------------------------------
+banner "Appcast item (website/appcast.xml)"
+# --------------------------------------------------------------------------
+
+"$SCRIPT_DIR/appcast-item.sh" "$DMG_PATH"
