@@ -78,6 +78,24 @@ public final class FlaschenTaschenDisplay {
         )
     }
 
+    /// Pick which display a send picker should select (#0032).
+    ///
+    /// Keeps `current` whenever it still identifies one of `candidates`
+    /// (never stomps a user's valid explicit choice); otherwise prefers the
+    /// built-in default display (`source == defaultSource`), falling back to
+    /// the first candidate, or `nil` when there are none. Operates on plain
+    /// `(id, source)` pairs so it is unit-testable without SwiftData.
+    static func preferredSelection(
+        current: UUID?,
+        among candidates: [(id: UUID, source: String)]
+    ) -> UUID? {
+        if let current, candidates.contains(where: { $0.id == current }) {
+            return current
+        }
+        return candidates.first(where: { $0.source == defaultSource })?.id
+            ?? candidates.first?.id
+    }
+
     /// Computed property for a user-friendly endpoint description
     var endpoint: String {
         "\(host):\(port)"

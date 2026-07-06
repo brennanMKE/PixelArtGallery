@@ -172,11 +172,15 @@ struct VariantDetailView: View {
                 .disabled(isSending || selectedDisplay == nil)
             }
         }
-        .onChange(of: displays.map(\.id)) { _, ids in
-            // Keep a valid selection as the registry changes.
-            if selectedDisplayID == nil || !ids.contains(where: { $0 == selectedDisplayID }) {
-                selectedDisplayID = ids.first
-            }
+        .onChange(of: displays.map(\.id), initial: true) { _, _ in
+            // Initialize the selection when the view appears (initial: true)
+            // and keep it valid as the registry changes: prefer the default
+            // display, else the first, but never stomp a still-valid explicit
+            // choice (#0032).
+            selectedDisplayID = FlaschenTaschenDisplay.preferredSelection(
+                current: selectedDisplayID,
+                among: displays.map { (id: $0.id, source: $0.source) }
+            )
         }
     }
 
