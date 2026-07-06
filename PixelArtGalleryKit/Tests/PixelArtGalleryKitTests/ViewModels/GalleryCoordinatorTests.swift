@@ -13,6 +13,31 @@ import UniformTypeIdentifiers
 @MainActor
 final class GalleryCoordinatorTests: XCTestCase {
 
+    /// Unique per-test temporary directory that backs the coordinator's
+    /// ``FileStorageManager``, so imports never write into the user's real
+    /// `Application Support/PixelArtGallery/Images` directory (#0034).
+    private var tempDirectory: URL?
+
+    override func setUp() async throws {
+        try await super.setUp()
+        tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("GalleryCoordinatorTests-\(UUID().uuidString)", isDirectory: true)
+    }
+
+    override func tearDown() async throws {
+        if let tempDirectory {
+            try? FileManager.default.removeItem(at: tempDirectory)
+        }
+        tempDirectory = nil
+        try await super.tearDown()
+    }
+
+    /// Build a coordinator whose file storage is isolated to ``tempDirectory``.
+    private func makeCoordinator() throws -> GalleryCoordinator {
+        let directory = try XCTUnwrap(tempDirectory, "setUp should have created a temp directory")
+        return GalleryCoordinator(fileStorage: try FileStorageManager(imageDirectory: directory))
+    }
+
     /// A fresh in-memory SwiftData context covering the gallery + display models.
     private func makeContext() throws -> ModelContext {
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
@@ -35,7 +60,7 @@ final class GalleryCoordinatorTests: XCTestCase {
 
     func testCreateVariantRecordsAssociatedDisplayId() async throws {
         let context = try makeContext()
-        let coordinator = GalleryCoordinator()
+        let coordinator = try makeCoordinator()
         coordinator.configure(modelContext: context)
 
         let display = FlaschenTaschenDisplay(
@@ -65,7 +90,7 @@ final class GalleryCoordinatorTests: XCTestCase {
 
     func testCreateVariantWithoutDisplayLeavesAssociationNil() async throws {
         let context = try makeContext()
-        let coordinator = GalleryCoordinator()
+        let coordinator = try makeCoordinator()
         coordinator.configure(modelContext: context)
 
         let item = try await makeItem(in: context, coordinator: coordinator)
@@ -82,7 +107,7 @@ final class GalleryCoordinatorTests: XCTestCase {
 
     func testDeleteGalleryItemRemovesItemAndCascadesVariants() async throws {
         let context = try makeContext()
-        let coordinator = GalleryCoordinator()
+        let coordinator = try makeCoordinator()
         coordinator.configure(modelContext: context)
 
         let item = try await makeItem(in: context, coordinator: coordinator)
@@ -101,7 +126,7 @@ final class GalleryCoordinatorTests: XCTestCase {
 
     func testImportingSameBytesTwiceYieldsOneItem() async throws {
         let context = try makeContext()
-        let coordinator = GalleryCoordinator()
+        let coordinator = try makeCoordinator()
         coordinator.configure(modelContext: context)
 
         let pngData = try Self.makePNGData(width: 16, height: 16)
@@ -121,7 +146,7 @@ final class GalleryCoordinatorTests: XCTestCase {
 
     func testImportingDifferentBytesYieldsTwoItems() async throws {
         let context = try makeContext()
-        let coordinator = GalleryCoordinator()
+        let coordinator = try makeCoordinator()
         coordinator.configure(modelContext: context)
 
         let pngA = try Self.makePNGData(width: 16, height: 16)
@@ -141,7 +166,7 @@ final class GalleryCoordinatorTests: XCTestCase {
 
     func testDuplicateVariantCopiesDataAndIncreasesCount() async throws {
         let context = try makeContext()
-        let coordinator = GalleryCoordinator()
+        let coordinator = try makeCoordinator()
         coordinator.configure(modelContext: context)
 
         let item = try await makeItem(in: context, coordinator: coordinator)
@@ -163,7 +188,7 @@ final class GalleryCoordinatorTests: XCTestCase {
 
     func testUpdateVariantDimensionsRegeneratesPixelData() async throws {
         let context = try makeContext()
-        let coordinator = GalleryCoordinator()
+        let coordinator = try makeCoordinator()
         coordinator.configure(modelContext: context)
 
         let item = try await makeItem(in: context, coordinator: coordinator)
@@ -188,7 +213,7 @@ final class GalleryCoordinatorTests: XCTestCase {
 
     func testRenameGalleryItemUpdatesAndPersistsName() async throws {
         let context = try makeContext()
-        let coordinator = GalleryCoordinator()
+        let coordinator = try makeCoordinator()
         coordinator.configure(modelContext: context)
 
         let item = try await makeItem(in: context, coordinator: coordinator)
@@ -207,7 +232,7 @@ final class GalleryCoordinatorTests: XCTestCase {
 
     func testRenameGalleryItemIgnoresEmptyOrWhitespaceName() async throws {
         let context = try makeContext()
-        let coordinator = GalleryCoordinator()
+        let coordinator = try makeCoordinator()
         coordinator.configure(modelContext: context)
 
         let item = try await makeItem(in: context, coordinator: coordinator)
@@ -239,7 +264,7 @@ final class GalleryCoordinatorTests: XCTestCase {
     /// This is the regression guard for "imported image never displays".
     func testImportedImageCanBeLoadedBackAndDecoded() async throws {
         let context = try makeContext()
-        let coordinator = GalleryCoordinator()
+        let coordinator = try makeCoordinator()
         coordinator.configure(modelContext: context)
 
         let pngData = try Self.makePNGData(width: 400, height: 300)
@@ -279,7 +304,7 @@ final class GalleryCoordinatorTests: XCTestCase {
 
     func testSeedDefaultDisplayWhenRegistryIsEmpty() throws {
         let context = try makeContext()
-        let coordinator = GalleryCoordinator()
+        let coordinator = try makeCoordinator()
         coordinator.configure(modelContext: context)
 
         let seeded = coordinator.seedDefaultDisplayIfNeeded()
@@ -299,7 +324,7 @@ final class GalleryCoordinatorTests: XCTestCase {
 
     func testSeedDefaultDisplayIsIdempotent() throws {
         let context = try makeContext()
-        let coordinator = GalleryCoordinator()
+        let coordinator = try makeCoordinator()
         coordinator.configure(modelContext: context)
 
         XCTAssertTrue(coordinator.seedDefaultDisplayIfNeeded())
@@ -312,7 +337,7 @@ final class GalleryCoordinatorTests: XCTestCase {
 
     func testSeedDefaultDisplaySkipsWhenAnyDisplayExists() throws {
         let context = try makeContext()
-        let coordinator = GalleryCoordinator()
+        let coordinator = try makeCoordinator()
         coordinator.configure(modelContext: context)
 
         try coordinator.addManualDisplay(

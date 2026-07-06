@@ -1,29 +1,38 @@
 import Foundation
 
 /// Actor responsible for managing file I/O operations for original images.
-/// Handles saving, loading, and deleting image data to/from the Application Support directory.
+/// Handles saving, loading, and deleting image data to/from the Application Support directory
+/// by default, or a caller-supplied directory (used by tests to stay out of real user data).
 /// Uses UUID-based filenames to ensure uniqueness and avoid collisions.
 actor FileStorageManager {
-    /// Base directory for image storage within Application Support
+    /// Base directory for image storage
     private let imageDirectory: URL
 
-    /// Initialize the FileStorageManager and ensure the storage directory exists
-    init() throws {
-        // Get Application Support directory
-        guard let appSupportURL = FileManager.default.urls(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask
-        ).first else {
-            throw FileStorageError.directoryAccessDenied
-        }
+    /// Initialize the FileStorageManager and ensure the storage directory exists.
+    /// - Parameter imageDirectory: Directory to store image files in. Pass `nil`
+    ///   (the default) to use the production location,
+    ///   `Application Support/PixelArtGallery/Images`. Tests inject a temporary
+    ///   directory here so they never touch the user's real gallery storage.
+    init(imageDirectory: URL? = nil) throws {
+        if let imageDirectory {
+            self.imageDirectory = imageDirectory
+        } else {
+            // Get Application Support directory
+            guard let appSupportURL = FileManager.default.urls(
+                for: .applicationSupportDirectory,
+                in: .userDomainMask
+            ).first else {
+                throw FileStorageError.directoryAccessDenied
+            }
 
-        // Create PixelArtGallery subdirectory
-        let pixelArtGalleryURL = appSupportURL.appendingPathComponent("PixelArtGallery", isDirectory: true)
-        self.imageDirectory = pixelArtGalleryURL.appendingPathComponent("Images", isDirectory: true)
+            // Create PixelArtGallery subdirectory
+            let pixelArtGalleryURL = appSupportURL.appendingPathComponent("PixelArtGallery", isDirectory: true)
+            self.imageDirectory = pixelArtGalleryURL.appendingPathComponent("Images", isDirectory: true)
+        }
 
         // Ensure the directory exists
         try FileManager.default.createDirectory(
-            at: imageDirectory,
+            at: self.imageDirectory,
             withIntermediateDirectories: true,
             attributes: nil
         )

@@ -7,13 +7,58 @@ import UniformTypeIdentifiers
 final class FileStorageManagerTests: XCTestCase {
     var manager: FileStorageManager?
 
+    /// Unique per-test temporary directory the manager stores files in, so the
+    /// suite never touches the real `Application Support/PixelArtGallery/Images`
+    /// directory the app uses (#0034). Created in `setUp`, removed in `tearDown`.
+    private var tempDirectory: URL?
+
     override func setUp() async throws {
         try await super.setUp()
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("FileStorageManagerTests-\(UUID().uuidString)", isDirectory: true)
+        tempDirectory = directory
         do {
-            manager = try await FileStorageManager()
+            manager = try FileStorageManager(imageDirectory: directory)
         } catch {
             XCTFail("Failed to initialize FileStorageManager: \(error)")
         }
+    }
+
+    override func tearDown() async throws {
+        manager = nil
+        if let tempDirectory {
+            try? FileManager.default.removeItem(at: tempDirectory)
+        }
+        tempDirectory = nil
+        try await super.tearDown()
+    }
+
+    /// The injectable directory is honored: files land inside the temporary
+    /// directory (which init creates), not in the default Application Support
+    /// location (#0034).
+    func testInitWithCustomDirectoryStoresFilesThere() async throws {
+        guard let manager = manager, let tempDirectory = tempDirectory else {
+            XCTFail("FileStorageManager not initialized")
+            return
+        }
+
+        var isDirectory: ObjCBool = false
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: tempDirectory.path, isDirectory: &isDirectory),
+            "Init should create the injected directory"
+        )
+        XCTAssertTrue(isDirectory.boolValue, "The injected path should be a directory")
+
+        let filename = try await manager.save(imageData: Data("isolation".utf8))
+        let filePath = await manager.getFilePath(filename: filename)
+        XCTAssertEqual(
+            filePath, tempDirectory.appendingPathComponent(filename),
+            "Saved files must live inside the injected directory"
+        )
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: filePath.path),
+            "The saved file should exist inside the temporary directory"
+        )
     }
 
     func testSaveAndLoadImageData() async throws {
@@ -90,7 +135,6 @@ final class FileStorageManagerTests: XCTestCase {
         let pngData = try Self.makePNGData(width: expectedWidth, height: expectedHeight)
 
         let filename = try await manager.save(imageData: pngData)
-        defer { Task { try? await manager.delete(filename: filename) } }
 
         let loaded = try await manager.load(filename: filename)
         XCTAssertEqual(loaded, pngData, "Loaded image bytes should match what was saved")

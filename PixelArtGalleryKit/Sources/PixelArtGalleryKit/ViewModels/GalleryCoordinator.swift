@@ -63,7 +63,13 @@ final class GalleryCoordinator {
     /// The UI shows it and clears it; unlike ``currentError`` it is informational.
     var importMessage: String?
 
-    init() {}
+    /// - Parameter fileStorage: Optional pre-built file store. Production code
+    ///   passes nothing and the store is created lazily against the default
+    ///   Application Support location; tests inject one pointed at a temporary
+    ///   directory so they never write into the user's real gallery storage.
+    init(fileStorage: FileStorageManager? = nil) {
+        self.fileStorage = fileStorage
+    }
 
     /// Inject the SwiftData context the coordinator should mutate.
     ///
