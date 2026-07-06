@@ -191,12 +191,24 @@ private struct DisplayRow: View {
                 HStack(spacing: 6) {
                     Text(display.resolution)
                     Text("·")
-                    Text(display.source == "mdns" ? "Discovered" : "Manual")
+                    Text(sourceLabel)
                 }
                 .font(.caption2)
                 .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    /// Human-readable origin of the display record.
+    private var sourceLabel: String {
+        switch display.source {
+        case "mdns":
+            return "Discovered"
+        case FlaschenTaschenDisplay.defaultSource:
+            return "Default"
+        default:
+            return "Manual"
         }
     }
 }

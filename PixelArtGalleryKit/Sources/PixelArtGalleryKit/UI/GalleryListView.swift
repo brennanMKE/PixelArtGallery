@@ -33,6 +33,12 @@ public struct GalleryListView: View {
     /// The gallery item pending delete confirmation, if any.
     @State private var itemToDelete: GalleryItem?
 
+    #if os(iOS)
+    /// Whether the in-app Settings sheet is presented (iOS only; macOS uses the
+    /// standard `Settings` scene instead).
+    @State private var showSettings = false
+    #endif
+
     /// Live, auto-updating gallery items sourced directly from SwiftData.
     /// The view owns the query; the coordinator only handles mutations.
     @Query(sort: \GalleryItem.importedDate, order: .reverse) private var galleryItems: [GalleryItem]
@@ -137,6 +143,15 @@ public struct GalleryListView: View {
                         Label("Displays", systemImage: "display")
                     }
                 }
+                #if os(iOS)
+                // macOS reaches SettingsView through the app's Settings scene
+                // (⌘,), so the gear only appears on iOS.
+                ToolbarItem(placement: .secondaryAction) {
+                    Button(action: { showSettings = true }) {
+                        Label("Settings", systemImage: "gearshape")
+                    }
+                }
+                #endif
             }
 
             // Error alert
@@ -161,6 +176,10 @@ public struct GalleryListView: View {
             }
             .onAppear {
                 coordinator.configure(modelContext: modelContext)
+                // Seed the built-in default FT display when the registry is
+                // completely empty, so Send to Display always has a target
+                // (#0021). Idempotent — no-op once any display exists.
+                coordinator.seedDefaultDisplayIfNeeded()
             }
             // Rename an existing gallery item.
             .alert("Rename Image", isPresented: Binding(
@@ -250,6 +269,23 @@ public struct GalleryListView: View {
                 try? await coordinator.createGalleryItem(name: name, imageData: pending.imageData)
             }
         }
+
+        #if os(iOS)
+        // In-app Settings (default FT display). Grouped form in a sheet is fine
+        // on iOS; macOS gets the standard Settings scene instead.
+        .sheet(isPresented: $showSettings) {
+            NavigationStack {
+                SettingsView()
+                    .navigationTitle("Settings")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") { showSettings = false }
+                        }
+                    }
+            }
+        }
+        #endif
 
         // Variant creation sheet
         .sheet(isPresented: $coordinator.showVariantCreation) {

@@ -398,6 +398,40 @@ final class GalleryCoordinator {
         }
     }
 
+    /// Seed the built-in default Flaschen Taschen display when the registry is
+    /// completely empty (#0021).
+    ///
+    /// Rule: seed only when there are **no** ``FlaschenTaschenDisplay`` records
+    /// at all at the time of the call. This keeps the call idempotent (once the
+    /// default exists the registry is non-empty, so repeated `onAppear` calls
+    /// are no-ops) and respects a user who deleted the default while keeping
+    /// other displays — the default is only ever re-created when the registry
+    /// has gone back to empty. Failures are logged but not surfaced through
+    /// ``currentError``; a missing default is a cosmetic gap, not an error the
+    /// user needs to act on.
+    /// - Returns: `true` if the default display was inserted.
+    @discardableResult
+    func seedDefaultDisplayIfNeeded() -> Bool {
+        guard let modelContext else {
+            AppLog.ftDiscovery.error("seedDefaultDisplayIfNeeded called before a ModelContext was configured")
+            return false
+        }
+
+        do {
+            let count = try modelContext.fetchCount(FetchDescriptor<FlaschenTaschenDisplay>())
+            guard count == 0 else { return false }
+
+            let display = FlaschenTaschenDisplay.makeDefault()
+            modelContext.insert(display)
+            try modelContext.save()
+            AppLog.ftDiscovery.info("Seeded default display: \(display.displayName, privacy: .public) at \(display.host, privacy: .public):\(display.port) (\(display.displayWidth)×\(display.displayHeight))")
+            return true
+        } catch {
+            AppLog.ftDiscovery.error("Failed to seed default display: \(error.localizedDescription, privacy: .public)")
+            return false
+        }
+    }
+
     /// Rename a persisted Flaschen Taschen display.
     ///
     /// Trims the supplied name; an all-whitespace name is rejected (no-op) so a

@@ -69,5 +69,15 @@ struct PixelArtGalleryApp: App {
         #if os(macOS)
         .defaultSize(width: 1000, height: 700)
         #endif
+
+        // macOS Settings scene (Pixel Art Gallery ▸ Settings…, ⌘,) editing the
+        // default Flaschen Taschen display (#0021). Needs its own
+        // `.modelContainer` — scenes don't inherit the WindowGroup's.
+        #if os(macOS)
+        Settings {
+            SettingsView()
+        }
+        .modelContainer(modelContainer)
+        #endif
     }
 }

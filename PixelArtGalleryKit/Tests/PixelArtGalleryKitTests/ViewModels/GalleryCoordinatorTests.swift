@@ -275,6 +275,59 @@ final class GalleryCoordinatorTests: XCTestCase {
                      "Undecodable data should yield nil, not crash")
     }
 
+    // MARK: - Default display seeding (#0021)
+
+    func testSeedDefaultDisplayWhenRegistryIsEmpty() throws {
+        let context = try makeContext()
+        let coordinator = GalleryCoordinator()
+        coordinator.configure(modelContext: context)
+
+        let seeded = coordinator.seedDefaultDisplayIfNeeded()
+        XCTAssertTrue(seeded, "An empty registry should be seeded with the default display")
+
+        let displays = try context.fetch(FetchDescriptor<FlaschenTaschenDisplay>())
+        XCTAssertEqual(displays.count, 1)
+        let display = try XCTUnwrap(displays.first)
+        XCTAssertEqual(display.host, "flaschentaschen.local")
+        XCTAssertEqual(display.port, 1337)
+        XCTAssertEqual(display.displayWidth, 45)
+        XCTAssertEqual(display.displayHeight, 35)
+        XCTAssertEqual(display.displayName, "Flaschen Taschen")
+        XCTAssertEqual(display.source, FlaschenTaschenDisplay.defaultSource,
+                       "The seeded display must be marked as the built-in default")
+    }
+
+    func testSeedDefaultDisplayIsIdempotent() throws {
+        let context = try makeContext()
+        let coordinator = GalleryCoordinator()
+        coordinator.configure(modelContext: context)
+
+        XCTAssertTrue(coordinator.seedDefaultDisplayIfNeeded())
+        XCTAssertFalse(coordinator.seedDefaultDisplayIfNeeded(),
+                       "A second call must not seed again")
+
+        let displays = try context.fetch(FetchDescriptor<FlaschenTaschenDisplay>())
+        XCTAssertEqual(displays.count, 1, "Repeated seeding must never create duplicates")
+    }
+
+    func testSeedDefaultDisplaySkipsWhenAnyDisplayExists() throws {
+        let context = try makeContext()
+        let coordinator = GalleryCoordinator()
+        coordinator.configure(modelContext: context)
+
+        try coordinator.addManualDisplay(
+            host: "10.0.0.9", port: 1337, displayName: "Office",
+            displayWidth: 64, displayHeight: 32
+        )
+
+        let seeded = coordinator.seedDefaultDisplayIfNeeded()
+        XCTAssertFalse(seeded, "A non-empty registry must not be seeded")
+
+        let displays = try context.fetch(FetchDescriptor<FlaschenTaschenDisplay>())
+        XCTAssertEqual(displays.count, 1, "Only the pre-existing manual display should remain")
+        XCTAssertEqual(displays.first?.source, "manual")
+    }
+
     // MARK: - Helpers
 
     private static func makePNGData(width: Int, height: Int) throws -> Data {

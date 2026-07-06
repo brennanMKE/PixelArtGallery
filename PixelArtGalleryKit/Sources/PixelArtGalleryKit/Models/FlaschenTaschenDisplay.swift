@@ -27,8 +27,10 @@ public final class FlaschenTaschenDisplay {
     /// Timestamp when this display was discovered or added
     var discoveredDate: Date
 
-    /// Source of this display entry: "mdns" (discovered via mDNS) or "manual" (user-entered)
-    var source: String // "mdns" or "manual"
+    /// Source of this display entry: "mdns" (discovered via mDNS), "manual"
+    /// (user-entered), or "default" (the built-in seeded default, see
+    /// ``defaultSource``)
+    var source: String // "mdns", "manual", or "default"
 
     /// Initialize a new FT display entry
     /// - Parameters:
@@ -38,7 +40,7 @@ public final class FlaschenTaschenDisplay {
     ///   - displayWidth: Display width in pixels
     ///   - displayHeight: Display height in pixels
     ///   - discoveredDate: Timestamp of discovery/creation (defaults to now)
-    ///   - source: "mdns" or "manual"
+    ///   - source: "mdns", "manual", or "default"
     init(
         host: String,
         port: Int,
@@ -56,6 +58,24 @@ public final class FlaschenTaschenDisplay {
         self.displayHeight = displayHeight
         self.discoveredDate = discoveredDate
         self.source = source
+    }
+
+    /// The `source` value used for the built-in seeded default display (#0021).
+    static let defaultSource = "default"
+
+    /// Build the built-in default Flaschen Taschen display: the standard FT
+    /// hostname and port with a 45×35 geometry. Seeded on first launch so the
+    /// "Send to Display" picker is never empty out of the box, and editable in
+    /// Settings afterwards.
+    static func makeDefault() -> FlaschenTaschenDisplay {
+        FlaschenTaschenDisplay(
+            host: "flaschentaschen.local",
+            port: 1337,
+            displayName: "Flaschen Taschen",
+            displayWidth: 45,
+            displayHeight: 35,
+            source: defaultSource
+        )
     }
 
     /// Computed property for a user-friendly endpoint description
