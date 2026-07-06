@@ -25,8 +25,9 @@ actor FileStorageManager {
                 throw FileStorageError.directoryAccessDenied
             }
 
-            // Create PixelArtGallery subdirectory
-            let pixelArtGalleryURL = appSupportURL.appendingPathComponent("PixelArtGallery", isDirectory: true)
+            // Create the per-identity subdirectory (PixelArtGallery, or
+            // PixelArtGallery-Beta for the .beta bundle ID — #0045)
+            let pixelArtGalleryURL = appSupportURL.appendingPathComponent(StorageFolder.current, isDirectory: true)
             self.imageDirectory = pixelArtGalleryURL.appendingPathComponent("Images", isDirectory: true)
         }
 

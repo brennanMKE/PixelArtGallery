@@ -42,7 +42,9 @@ struct PixelArtGalleryApp: App {
             fatalError("Unable to access Application Support directory")
         }
 
-        let pixelArtGalleryURL = appSupportURL.appendingPathComponent("PixelArtGallery", isDirectory: true)
+        // Per-identity folder: "PixelArtGallery" for release,
+        // "PixelArtGallery-Beta" for the .beta (Debug) bundle ID (#0045).
+        let pixelArtGalleryURL = appSupportURL.appendingPathComponent(StorageFolder.current, isDirectory: true)
 
         // Ensure the directory exists
         do {

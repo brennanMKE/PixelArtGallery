@@ -27,7 +27,7 @@
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
 	<key>SUFeedURL</key>
-	<string>https://pixelartgallery.sstools.co/appcast.xml</string>
+	<string>$(PAG_SPARKLE_FEED_URL)</string>
 	<key>SUPublicEDKey</key>
 	<string>tQZNcNn4+PYvilca5jBXoPx6XHxM6mCYrwWh3pzl+H0=</string>
 </dict>

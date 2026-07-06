@@ -10,8 +10,12 @@
 #   Build    — macOS build, package tests (with observed test count), iOS build
 #   Version  — MARKETING_VERSION only in Configuration/Build.xcconfig (#0042),
 #              SemVer format, strictly greater than the newest appcast version
-#   Sparkle  — dependency in Package.swift, SUFeedURL + SUPublicEDKey in the
-#              built macOS app, NO Sparkle inside the built iOS app (#0038/#0039)
+#   Sparkle  — dependency in Package.swift, production feed configured for the
+#              Release configuration, SUPublicEDKey in the built macOS app and
+#              NO production SUFeedURL in the built Debug/beta app (#0045),
+#              NO Sparkle inside the built iOS app (#0038/#0039)
+#   Identity — Release configuration carries the production bundle ID and
+#              Debug the .beta one (#0045)
 #   Sandbox  — no com.apple.security.app-sandbox entitlement, hardened runtime on (#0036)
 #   Signing  — Developer ID Application cert, PixelArtGallery-notary profile (#0037)
 #   Website  — PAG_EC2_* env vars + SSH key perms (#0040), appcast<->DMG consistency (#0041)
@@ -227,15 +231,28 @@ else
             "re-add .package(url: \"https://github.com/sparkle-project/Sparkle\", from: \"2.6.0\") (#0038)"
 fi
 
+# The production feed lives in the Release configuration only (#0045):
+# PAG_SPARKLE_FEED_URL is substituted into SUFeedURL at build time, and Debug
+# builds get an empty value so the beta never talks to the production feed.
+RELEASE_FEED_URL="$(xcodebuild -project "$PROJECT" -scheme "$SCHEME" \
+    -configuration Release -destination 'generic/platform=macOS' -showBuildSettings 2>/dev/null \
+  | awk -F' = ' '/ PAG_SPARKLE_FEED_URL = /{print $2; exit}')"
+if [ -n "$RELEASE_FEED_URL" ]; then
+  pass "Release configuration has PAG_SPARKLE_FEED_URL ($RELEASE_FEED_URL)"
+else
+  gate_fail "Release configuration has no PAG_SPARKLE_FEED_URL — released builds would ship without a Sparkle feed" \
+            "restore PAG_SPARKLE_FEED_URL in the Release build settings (#0045)"
+fi
+
 if [ "$MACOS_BUILT" -eq 1 ]; then
   MAC_PLIST="$MACOS_APP/Contents/Info.plist"
   SU_FEED_URL="$(plutil -extract SUFeedURL raw -o - "$MAC_PLIST" 2>/dev/null || true)"
   SU_PUBLIC_KEY="$(plutil -extract SUPublicEDKey raw -o - "$MAC_PLIST" 2>/dev/null || true)"
-  if [ -n "$SU_FEED_URL" ]; then
-    pass "built macOS app has SUFeedURL ($SU_FEED_URL)"
+  if [ -z "$SU_FEED_URL" ]; then
+    pass "built Debug/beta macOS app has no production SUFeedURL (updater stays off, #0045)"
   else
-    gate_fail "built macOS app is missing SUFeedURL in Info.plist" \
-              "restore INFOPLIST_KEY_SUFeedURL / SUFeedURL wiring (#0039), then rebuild"
+    gate_fail "built Debug/beta macOS app has SUFeedURL ($SU_FEED_URL) — dev builds must not use the production feed" \
+              "set PAG_SPARKLE_FEED_URL to empty in the Debug build settings (#0045), then rebuild"
   fi
   if [ -n "$SU_PUBLIC_KEY" ]; then
     pass "built macOS app has SUPublicEDKey"
@@ -257,6 +274,36 @@ if [ "$IOS_BUILT" -eq 1 ]; then
   fi
 else
   skip "no-Sparkle-in-iOS check — no build at $IOS_APP"
+fi
+
+# ===========================================================================
+section "Identity gates"
+# ===========================================================================
+
+# Release builds (what scripts/release.sh archives) must carry the production
+# bundle ID; Debug builds carry the .beta identity so dev and shipped apps
+# coexist with separate data (#0045).
+PROD_BUNDLE_ID="co.sstools.PixelArtGallery"
+BETA_BUNDLE_ID="co.sstools.PixelArtGallery.beta"
+
+RELEASE_BUNDLE_ID="$(xcodebuild -project "$PROJECT" -scheme "$SCHEME" \
+    -configuration Release -destination 'generic/platform=macOS' -showBuildSettings 2>/dev/null \
+  | awk -F' = ' '/ PRODUCT_BUNDLE_IDENTIFIER = /{print $2; exit}')"
+if [ "$RELEASE_BUNDLE_ID" = "$PROD_BUNDLE_ID" ]; then
+  pass "Release configuration bundle ID is $PROD_BUNDLE_ID"
+else
+  gate_fail "Release configuration bundle ID is '${RELEASE_BUNDLE_ID:-unset}' (expected $PROD_BUNDLE_ID)" \
+            "fix PRODUCT_BUNDLE_IDENTIFIER in the target's Release build settings (#0045)"
+fi
+
+DEBUG_BUNDLE_ID="$(xcodebuild -project "$PROJECT" -scheme "$SCHEME" \
+    -configuration Debug -destination 'generic/platform=macOS' -showBuildSettings 2>/dev/null \
+  | awk -F' = ' '/ PRODUCT_BUNDLE_IDENTIFIER = /{print $2; exit}')"
+if [ "$DEBUG_BUNDLE_ID" = "$BETA_BUNDLE_ID" ]; then
+  pass "Debug configuration bundle ID is $BETA_BUNDLE_ID"
+else
+  gate_fail "Debug configuration bundle ID is '${DEBUG_BUNDLE_ID:-unset}' (expected $BETA_BUNDLE_ID)" \
+            "fix PRODUCT_BUNDLE_IDENTIFIER in the target's Debug build settings (#0045)"
 fi
 
 # ===========================================================================
