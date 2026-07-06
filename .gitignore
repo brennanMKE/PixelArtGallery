@@ -12,7 +12,8 @@ Screenshots/
 
 # Swift Package Manager
 .build/
-.swiftpm/xcode/package.xcworkspace/xcuserdata/
+**/.swiftpm/xcode/package.xcworkspace/xcuserdata/
+**/.swiftpm/xcode/xcuserdata/
 *.xcframework
 
 # IDE
