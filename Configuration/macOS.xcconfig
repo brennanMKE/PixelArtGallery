@@ -2,3 +2,8 @@
 ASSETCATALOG_COMPILER_APPICON_NAME[sdk=macos*] = AppIcon-macOS
 ENABLE_APP_SANDBOX[sdk=macos*] = NO
 MY_CUSTOM_BUILD_SETTING[sdk=macos*] = MACOS
+
+// macOS uses a real Info.plist file so Sparkle keys (SUFeedURL, SUPublicEDKey,
+// SUEnableAutomaticChecks) can be embedded; iOS keeps the generated plist (#0039).
+GENERATE_INFOPLIST_FILE[sdk=macos*] = NO
+INFOPLIST_FILE[sdk=macos*] = PixelArtGallery/Info-macOS.plist
