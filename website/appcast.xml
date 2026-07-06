@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+  <channel>
+    <title>Pixel Art Gallery Updates</title>
+    <link>https://pixelartgallery.sstools.co/appcast.xml</link>
+    <description>Sparkle update feed for Pixel Art Gallery for macOS.</description>
+    <language>en</language>
+    <!--
+      Release <item> entries are prepended here (newest first) by the release
+      flow — see scripts/release.sh and issue #0041 for the generator. Do not
+      hand-edit items. Each item links its release notes to
+      https://pixelartgallery.sstools.co/changelog.html#vX-Y-Z and its enclosure
+      to https://pixelartgallery.sstools.co/downloads/PixelArtGallery-X.Y.Z.dmg.
+    -->
+  </channel>
+</rss>

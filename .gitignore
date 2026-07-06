@@ -8,7 +8,7 @@ DerivedData/
 *.xcworkspace/xcshareddata/
 
 # Screenshots
-Screenshots/
+/Screenshots/
 
 # Swift Package Manager
 .build/

@@ -1,0 +1,380 @@
+/* Pixel Art Gallery — static site styles.
+   Self-contained: system fonts only, no external resources.
+   Light/dark via prefers-color-scheme. */
+
+:root {
+  --bg: #fafafa;
+  --bg-raised: #ffffff;
+  --text: #1c1c28;
+  --text-secondary: #5c5c6e;
+  --border: rgba(28, 28, 40, 0.12);
+  --accent: #0a6cff;
+  --accent-hover: #0857cc;
+  --accent-contrast: #ffffff;
+  --pixel-amber: #f5bc00;
+  --pixel-magenta: #d109a9;
+  --pixel-green: #12ce06;
+  --pixel-red: #cc1103;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0d0e16;
+    --bg-raised: #171826;
+    --text: #ececf4;
+    --text-secondary: #9a9ab0;
+    --border: rgba(236, 236, 244, 0.14);
+    --accent: #3b82f6;
+    --accent-hover: #60a5fa;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+}
+
+.container {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 1.25rem;
+}
+
+/* ---------- Header / nav ---------- */
+
+header.site-header {
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.site-header .container {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.site-header img.mark {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+}
+
+.site-header .name {
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: var(--text);
+}
+
+.site-header nav {
+  margin-left: auto;
+  display: flex;
+  gap: 1.25rem;
+}
+
+.site-header nav a {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+}
+
+.site-header nav a:hover {
+  color: var(--accent);
+}
+
+/* ---------- Hero ---------- */
+
+.hero {
+  text-align: center;
+  padding: 4rem 0 2.5rem;
+}
+
+.hero img.app-icon {
+  width: 128px;
+  height: 128px;
+  border-radius: 28px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+}
+
+.hero h1 {
+  font-size: clamp(2rem, 6vw, 3rem);
+  margin: 1.25rem 0 0.5rem;
+  letter-spacing: -0.02em;
+}
+
+.hero p.tagline {
+  font-size: clamp(1.05rem, 3vw, 1.3rem);
+  color: var(--text-secondary);
+  max-width: 34em;
+  margin: 0 auto 2rem;
+}
+
+.button-download {
+  display: inline-block;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-size: 1.1rem;
+  font-weight: 600;
+  padding: 0.85rem 2.2rem;
+  border-radius: 12px;
+  transition: background 0.15s ease;
+}
+
+.button-download:hover {
+  background: var(--accent-hover);
+  text-decoration: none;
+}
+
+.hero .fine-print {
+  margin-top: 0.9rem;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.hero-shot {
+  margin: 2.5rem auto 0;
+  max-width: 900px;
+}
+
+/* Screenshots are captured with the native macOS window shadow baked in
+   (transparent margins), so they need no extra frame. */
+.shot img {
+  display: block;
+  margin: 0 auto;
+}
+
+/* ---------- Pixel divider ---------- */
+
+.pixel-row {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  margin: 0.75rem 0 0;
+}
+
+.pixel-row span {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  display: inline-block;
+}
+
+.pixel-row span:nth-child(1) { background: var(--pixel-amber); }
+.pixel-row span:nth-child(2) { background: var(--pixel-magenta); }
+.pixel-row span:nth-child(3) { background: var(--pixel-green); }
+.pixel-row span:nth-child(4) { background: var(--pixel-red); }
+
+/* ---------- Sections ---------- */
+
+section {
+  padding: 3rem 0;
+}
+
+section h2 {
+  text-align: center;
+  font-size: clamp(1.5rem, 4vw, 2rem);
+  margin: 0 0 0.25rem;
+  letter-spacing: -0.01em;
+}
+
+section p.lede {
+  text-align: center;
+  color: var(--text-secondary);
+  max-width: 40em;
+  margin: 1rem auto 2.5rem;
+}
+
+/* ---------- Feature cards ---------- */
+
+.features {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1.25rem;
+  margin-top: 2rem;
+}
+
+.feature {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 1.4rem 1.5rem;
+}
+
+.feature .chip {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  overflow: hidden;
+  margin-bottom: 0.85rem;
+}
+
+.feature .chip i { display: block; }
+.feature .chip i:nth-child(1) { background: var(--pixel-amber); }
+.feature .chip i:nth-child(2) { background: var(--pixel-magenta); }
+.feature .chip i:nth-child(3) { background: var(--pixel-green); }
+.feature .chip i:nth-child(4) { background: var(--pixel-red); }
+
+.feature h3 {
+  margin: 0 0 0.4rem;
+  font-size: 1.05rem;
+}
+
+.feature p {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--text-secondary);
+}
+
+/* ---------- Showcase rows ---------- */
+
+.showcase {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2.5rem;
+  align-items: center;
+  margin-top: 3rem;
+}
+
+.showcase.flip .shot { order: 2; }
+
+.showcase h3 {
+  font-size: 1.35rem;
+  margin: 0 0 0.6rem;
+}
+
+.showcase p {
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+@media (max-width: 720px) {
+  .showcase {
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
+  }
+  .showcase.flip .shot { order: 0; }
+}
+
+/* ---------- Requirements ---------- */
+
+.requirements {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 1.75rem 2rem;
+  max-width: 560px;
+  margin: 0 auto;
+}
+
+.requirements ul {
+  margin: 0;
+  padding-left: 1.2rem;
+  color: var(--text-secondary);
+}
+
+.requirements li {
+  margin: 0.35rem 0;
+}
+
+/* ---------- Prose pages (changelog, privacy) ---------- */
+
+main.prose {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 3rem 1.25rem 4rem;
+}
+
+main.prose h1 {
+  font-size: clamp(1.75rem, 5vw, 2.4rem);
+  letter-spacing: -0.02em;
+  margin-bottom: 0.5rem;
+}
+
+main.prose h2 {
+  margin-top: 2.5rem;
+  font-size: 1.4rem;
+}
+
+main.prose h3 {
+  margin-top: 1.75rem;
+  font-size: 1.1rem;
+}
+
+main.prose p,
+main.prose li {
+  color: var(--text-secondary);
+}
+
+main.prose article {
+  border-top: 1px solid var(--border);
+  padding-top: 1.5rem;
+  margin-top: 2rem;
+}
+
+main.prose article .meta {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.badge {
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  vertical-align: middle;
+}
+
+/* ---------- Footer ---------- */
+
+footer.site-footer {
+  border-top: 1px solid var(--border);
+  padding: 2rem 0 2.5rem;
+  margin-top: 2rem;
+}
+
+.site-footer .container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.site-footer nav {
+  display: flex;
+  gap: 1.25rem;
+}
