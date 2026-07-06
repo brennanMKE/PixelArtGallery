@@ -58,6 +58,8 @@ struct VariantCreationView: View {
                             .textFieldStyle(.roundedBorder)
                             #if os(iOS)
                             .keyboardType(.numberPad)
+                            #else
+                            .labelsHidden()
                             #endif
                             .frame(width: 100)
                     }
@@ -69,6 +71,8 @@ struct VariantCreationView: View {
                             .textFieldStyle(.roundedBorder)
                             #if os(iOS)
                             .keyboardType(.numberPad)
+                            #else
+                            .labelsHidden()
                             #endif
                             .frame(width: 100)
                     }
@@ -99,6 +103,7 @@ struct VariantCreationView: View {
                     }
                 }
             }
+            .formStyle(.grouped)
             .navigationTitle("Create Variant")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
@@ -122,6 +127,11 @@ struct VariantCreationView: View {
                 }
             }
         }
+        #if os(macOS)
+        // Sheets on macOS don't size themselves to a Form's content; without an
+        // explicit frame the sheet collapses and the form rows are invisible (#0024).
+        .frame(minWidth: 440, minHeight: 440)
+        #endif
     }
 
     /// Fill the dimension fields from the chosen display's native size. A `nil`
