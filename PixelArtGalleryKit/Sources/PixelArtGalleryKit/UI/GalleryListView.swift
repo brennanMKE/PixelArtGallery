@@ -63,60 +63,38 @@ public struct GalleryListView: View {
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
-                    List {
-                        ForEach(galleryItems) { item in
-                        NavigationLink(value: item) {
-                            HStack(spacing: 12) {
-                                // Thumbnail of the imported original image.
-                                StoredImageView(
-                                    path: item.originalImagePath,
-                                    maxPixelSize: 180,
-                                    coordinator: coordinator
-                                ) {
-                                    Image(systemName: "photo.fill")
-                                        .resizable()
-                                        .scaledToFit()
-                                        .padding(14)
-                                        .foregroundStyle(.secondary)
+                    // Adaptive thumbnail grid: column count reflows with the
+                    // scene width (more columns on a wide Mac window or iPad,
+                    // fewer on iPhone). ScrollView is transparent, so
+                    // BackgroundPixelsView shows through naturally.
+                    ScrollView {
+                        LazyVGrid(
+                            columns: [GridItem(.adaptive(minimum: 150, maximum: 220), spacing: Theme.Spacing.m)],
+                            alignment: .leading,
+                            spacing: Theme.Spacing.m
+                        ) {
+                            ForEach(galleryItems) { item in
+                                NavigationLink(value: item) {
+                                    galleryCell(for: item)
                                 }
-                                .frame(width: 60, height: 60)
-                                .background(.quaternary, in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
-                                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
-
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(item.originalName)
-                                        .font(.headline)
-                                    Text(item.importedDate, style: .date)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                    Text("\(item.variants.count) variant\(item.variants.count != 1 ? "s" : "")")
-                                        .font(.caption2)
-                                        .foregroundStyle(.secondary)
+                                .buttonStyle(.plain)
+                                .contextMenu {
+                                    Button {
+                                        renameText = item.originalName
+                                        itemToRename = item
+                                    } label: {
+                                        Label("Rename", systemImage: "pencil")
+                                    }
+                                    Button(role: .destructive) {
+                                        itemToDelete = item
+                                    } label: {
+                                        Label("Delete", systemImage: "trash")
+                                    }
                                 }
-                                .frame(maxWidth: .infinity, alignment: .leading)
                             }
                         }
-                        .contextMenu {
-                            Button {
-                                renameText = item.originalName
-                                itemToRename = item
-                            } label: {
-                                Label("Rename", systemImage: "pencil")
-                            }
-                            Button(role: .destructive) {
-                                itemToDelete = item
-                            } label: {
-                                Label("Delete", systemImage: "trash")
-                            }
-                        }
-                        }
-                        .onDelete { offsets in
-                            for index in offsets {
-                                coordinator.deleteGalleryItem(galleryItems[index])
-                            }
-                        }
+                        .padding(Theme.Spacing.l)
                     }
-                    .scrollContentBackground(.hidden)
                 }
             }
             .navigationDestination(for: GalleryItem.self) { item in
@@ -301,6 +279,45 @@ public struct GalleryListView: View {
             }
         }
         .tint(.pixelAccent)
+    }
+
+    /// A single gallery grid cell: a square, rounded thumbnail of the imported
+    /// original with the item's name and variant count as compact captions.
+    @ViewBuilder
+    private func galleryCell(for item: GalleryItem) -> some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.s) {
+            // Square thumbnail regardless of the source image's aspect ratio:
+            // a clear square defines the cell's footprint, the image fills it
+            // and is clipped to the card radius.
+            Color.clear
+                .aspectRatio(1, contentMode: .fit)
+                .overlay {
+                    StoredImageView(
+                        path: item.originalImagePath,
+                        maxPixelSize: 540,
+                        coordinator: coordinator
+                    ) {
+                        Image(systemName: "photo.fill")
+                            .resizable()
+                            .scaledToFit()
+                            .padding(Theme.Spacing.xl)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .background(.quaternary)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+
+            VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                Text(item.originalName)
+                    .font(.headline)
+                    .lineLimit(1)
+                Text("\(item.variants.count) variant\(item.variants.count != 1 ? "s" : "")")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, Theme.Spacing.xs)
+        }
+        .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
     }
 }
 
