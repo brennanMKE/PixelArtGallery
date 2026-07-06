@@ -29,6 +29,8 @@ public struct GalleryListView: View {
     @State private var itemToRename: GalleryItem?
     /// Working text for the rename alert's text field.
     @State private var renameText: String = ""
+    /// The gallery item pending delete confirmation, if any.
+    @State private var itemToDelete: GalleryItem?
 
     /// Live, auto-updating gallery items sourced directly from SwiftData.
     /// The view owns the query; the coordinator only handles mutations.
@@ -93,6 +95,11 @@ public struct GalleryListView: View {
                                 itemToRename = item
                             } label: {
                                 Label("Rename", systemImage: "pencil")
+                            }
+                            Button(role: .destructive) {
+                                itemToDelete = item
+                            } label: {
+                                Label("Delete", systemImage: "trash")
                             }
                         }
                         }
@@ -171,6 +178,27 @@ public struct GalleryListView: View {
                 }
             } message: {
                 Text("Enter a new name for this image.")
+            }
+            // Confirm before deleting a gallery item from the row's context
+            // menu — deletion also removes its variants and stored files.
+            .confirmationDialog(
+                "Delete this image?",
+                isPresented: Binding(
+                    get: { itemToDelete != nil },
+                    set: { if !$0 { itemToDelete = nil } }
+                ),
+                titleVisibility: .visible,
+                presenting: itemToDelete
+            ) { item in
+                Button("Delete Image", role: .destructive) {
+                    coordinator.deleteGalleryItem(item)
+                    itemToDelete = nil
+                }
+                Button("Cancel", role: .cancel) {
+                    itemToDelete = nil
+                }
+            } message: { item in
+                Text("\(item.originalName) and its variants will be deleted — this can't be undone.")
             }
             }
         }

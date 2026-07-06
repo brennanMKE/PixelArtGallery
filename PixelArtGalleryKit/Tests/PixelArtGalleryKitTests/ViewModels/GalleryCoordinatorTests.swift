@@ -78,6 +78,25 @@ final class GalleryCoordinatorTests: XCTestCase {
                      "Custom dimensions should record no display association")
     }
 
+    // MARK: - Deletion (#0029)
+
+    func testDeleteGalleryItemRemovesItemAndCascadesVariants() async throws {
+        let context = try makeContext()
+        let coordinator = GalleryCoordinator()
+        coordinator.configure(modelContext: context)
+
+        let item = try await makeItem(in: context, coordinator: coordinator)
+        try await coordinator.createVariant(for: item, width: 8, height: 8)
+        XCTAssertEqual(try context.fetch(FetchDescriptor<Variant>()).count, 1)
+
+        coordinator.deleteGalleryItem(item)
+
+        XCTAssertTrue(try context.fetch(FetchDescriptor<GalleryItem>()).isEmpty,
+                      "Deleting a gallery item should remove it from the store")
+        XCTAssertTrue(try context.fetch(FetchDescriptor<Variant>()).isEmpty,
+                      "Deleting a gallery item should cascade-delete its variants")
+    }
+
     // MARK: - Duplicate prevention (#0014)
 
     func testImportingSameBytesTwiceYieldsOneItem() async throws {
