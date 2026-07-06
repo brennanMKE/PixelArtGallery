@@ -45,6 +45,8 @@ Setting status to `in-progress` at the start of work is a working-copy-only edit
 
 A fix is only verified when the relevant command actually runs and tests/build pass — compilation alone is not verification. The app is multiplatform (iOS 18 / macOS 15); verify both platforms when a change touches platform-conditional code.
 
+**Release:** the end-to-end release checklist is `scripts/RELEASE.md` (Sparkle key/appcast details in `scripts/SPARKLE.md`); the v1.0.0 go/no-go gate is `Ship-v1.md` at the repo root. Preflight everything with `scripts/preflight.sh`. Notarization submissions and website deploys are user-run steps.
+
 ## Module conventions for this project
 
 Use these canonical area names in the **Module** row:
