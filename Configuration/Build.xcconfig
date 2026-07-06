@@ -6,6 +6,13 @@ INFOPLIST_KEY_CFBundleDisplayName = Pixel Art Gallery
 
 SWIFT_VERSION = 6.0
 
+// Single source of truth for versioning (#0042).
+// Bump releases here in one line: "Bump version to <X.Y.Z>".
+// CURRENT_PROJECT_VERSION is only for Xcode-driven debug builds;
+// scripts/release.sh overrides it at archive time with the UTC date (YYYYMMDD).
+MARKETING_VERSION = 1.0.0
+CURRENT_PROJECT_VERSION = 1
+
 INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "Saves exported pixel art images to your photo library."
 
 SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor
