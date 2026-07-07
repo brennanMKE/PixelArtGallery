@@ -39,7 +39,13 @@ nonisolated public struct PixelationEngine: Sendable {
             AppLog.imageProcessor.error("Failed to create image source from \(imageData.count) bytes")
             throw PixelationError.failedToCreateImageSource
         }
-        guard let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+        // Decode with the image's EXIF orientation applied so photos shot in
+        // portrait (or any non-default orientation) are pixelated upright.
+        // `CGImageSourceCreateImageAtIndex` returns the raw pixel buffer and
+        // ignores `kCGImagePropertyOrientation`; the thumbnail path below honors
+        // it (`…WithTransform`) and works on both iOS and macOS without UIKit.
+        guard let cgImage = Self.uprightImage(from: source)
+            ?? CGImageSourceCreateImageAtIndex(source, 0, nil) else {
             AppLog.imageProcessor.error("Failed to decode image from source")
             throw PixelationError.failedToDecodeImage
         }
@@ -47,6 +53,31 @@ nonisolated public struct PixelationEngine: Sendable {
         let grid = try pixelate(cgImage, targetWidth: targetWidth, targetHeight: targetHeight)
         AppLog.imageProcessor.info("Pixelated \(cgImage.width)×\(cgImage.height) source into \(targetWidth)×\(targetHeight) grid")
         return grid
+    }
+
+    /// Decode the primary image with its EXIF orientation baked into the pixels,
+    /// yielding an upright `CGImage`.
+    ///
+    /// ImageIO's thumbnail generator applies `kCGImagePropertyOrientation` when
+    /// `kCGImageSourceCreateThumbnailWithTransform` is set, which the plain
+    /// `CGImageSourceCreateImageAtIndex` decode does not. The max pixel size is
+    /// pinned to the source's largest dimension so no resolution is lost before
+    /// the downsample step (the value only caps the output, it never upscales).
+    /// Returns `nil` if the source has no usable dimensions or ImageIO declines
+    /// to produce a thumbnail, letting the caller fall back to a raw decode.
+    static func uprightImage(from source: CGImageSource) -> CGImage? {
+        let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
+        let pixelWidth = properties?[kCGImagePropertyPixelWidth] as? Int ?? 0
+        let pixelHeight = properties?[kCGImagePropertyPixelHeight] as? Int ?? 0
+        let maxDimension = max(pixelWidth, pixelHeight)
+        guard maxDimension > 0 else { return nil }
+
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxDimension,
+        ]
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
     }
 
     /// Downsample a decoded `CGImage` into a `PixelGrid`.
