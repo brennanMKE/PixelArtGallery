@@ -15,6 +15,8 @@ public enum FTDisplayError: LocalizedError, Equatable {
     case sendFailed(String)
     /// The connection did not become ready within the allotted time.
     case timedOut
+    /// The send was cancelled (e.g. the user tapped Stop) before it completed.
+    case cancelled
 
     public var errorDescription: String? {
         switch self {
@@ -30,6 +32,8 @@ public enum FTDisplayError: LocalizedError, Equatable {
             return "Failed to send image to the display: \(reason)"
         case .timedOut:
             return "Timed out connecting to the display."
+        case .cancelled:
+            return "The send was cancelled."
         }
     }
 }
@@ -109,6 +113,7 @@ public actor FTDisplayClient {
 
         AppLog.ftDiscovery.info("Sending \(width)×\(height) variant to \(trimmedHost, privacy: .public):\(port)")
 
+        try Self.throwIfCancelled()
         onProgress?(.encoding)
         let packet = try Self.makePacket(
             width: width,
@@ -119,18 +124,45 @@ public actor FTDisplayClient {
         )
         AppLog.ftDiscovery.debug("Encoded FT packet: \(packet.count) bytes for \(width)x\(height) -> \(trimmedHost, privacy: .public):\(port)")
 
+        try Self.throwIfCancelled()
         let nwHost = NWEndpoint.Host(trimmedHost)
         let connection = NWConnection(host: nwHost, port: nwPort, using: .udp)
 
-        onProgress?(.connecting)
-        try await withConnectionReady(connection)
+        // Tear the connection down if the surrounding task is cancelled while we
+        // await connect/send. Cancelling the connection surfaces as a thrown
+        // error from the awaits below; we translate that to `.cancelled` when the
+        // task was in fact cancelled, so callers can tell a user stop apart from a
+        // genuine network failure.
+        do {
+            try await withTaskCancellationHandler {
+                onProgress?(.connecting)
+                try await withConnectionReady(connection)
 
-        onProgress?(.sending)
-        try await sendPacket(packet, over: connection)
+                try Self.throwIfCancelled()
+                onProgress?(.sending)
+                try await sendPacket(packet, over: connection)
 
-        connection.cancel()
-        onProgress?(.completed)
+                connection.cancel()
+                onProgress?(.completed)
+            } onCancel: {
+                connection.cancel()
+            }
+        } catch {
+            connection.cancel()
+            if Task.isCancelled {
+                AppLog.ftDiscovery.info("Send to \(trimmedHost, privacy: .public):\(port) cancelled")
+                throw FTDisplayError.cancelled
+            }
+            throw error
+        }
+
         AppLog.ftDiscovery.info("Sent FT image (\(packet.count) bytes) to \(trimmedHost, privacy: .public):\(port)")
+    }
+
+    /// Throw ``FTDisplayError/cancelled`` if the current task has been cancelled.
+    /// Used at checkpoints so a stop request is honored promptly between stages.
+    private static func throwIfCancelled() throws {
+        if Task.isCancelled { throw FTDisplayError.cancelled }
     }
 
     // MARK: - Packet construction

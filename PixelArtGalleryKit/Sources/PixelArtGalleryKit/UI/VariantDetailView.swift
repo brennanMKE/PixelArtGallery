@@ -14,11 +14,14 @@ struct VariantDetailView: View {
     @State private var selectedDisplayID: UUID?
     @State private var sendLayer: Int = FlaschenTaschenDisplay.defaultLayer
     @State private var isSending = false
+    /// The in-flight send, retained so the user can cancel it by tapping Stop (#0050).
+    @State private var sendTask: Task<Void, Never>?
     @State private var showExportPicker = false
     @State private var isEditingDimensions = false
     @State private var isConfirmingDelete = false
     @State private var successMessage: String?
     @State private var errorMessage: String?
+    @State private var infoMessage: String?
 
     /// The currently selected display resolved from `selectedDisplayID`.
     private var selectedDisplay: FlaschenTaschenDisplay? {
@@ -39,10 +42,14 @@ struct VariantDetailView: View {
                 if let errorMessage {
                     StatusBanner(kind: .error, message: errorMessage)
                 }
+                if let infoMessage {
+                    StatusBanner(kind: .info, message: infoMessage)
+                }
             }
             .padding()
             .animation(.default, value: successMessage)
             .animation(.default, value: errorMessage)
+            .animation(.default, value: infoMessage)
         }
         .navigationTitle("Variant Details")
         #if os(iOS)
@@ -175,13 +182,19 @@ struct VariantDetailView: View {
                 }
                 .disabled(isSending || selectedDisplay == nil)
 
+                // Stays tappable while sending so the user can stop an in-flight
+                // (or stuck) send by tapping again (#0050).
                 Button(action: handleSendToDisplay) {
-                    Label(isSending ? "Sending…" : "Send Now", systemImage: "arrow.up.right.circle.fill")
-                        .frame(maxWidth: .infinity)
+                    Label(
+                        isSending ? "Stop Sending" : "Send Now",
+                        systemImage: isSending ? "stop.circle.fill" : "arrow.up.right.circle.fill"
+                    )
+                    .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .tint(isSending ? .red : nil)
                 .controlSize(.large)
-                .disabled(isSending || selectedDisplay == nil)
+                .disabled(selectedDisplay == nil)
             }
         }
         .onChange(of: displays.map(\.id), initial: true) { _, _ in
@@ -219,6 +232,15 @@ struct VariantDetailView: View {
     }
 
     private func handleSendToDisplay() {
+        // Tapping while a send is in flight stops it (#0050). Cancellation is
+        // cooperative: the client observes it and throws `.cancelled`, and the
+        // Task's catch clears `isSending` and shows a neutral message.
+        if isSending {
+            AppLog.ftDiscovery.info("User requested stop of in-flight send")
+            sendTask?.cancel()
+            return
+        }
+
         guard let display = selectedDisplay else { return }
 
         // Read the @Model's plain fields on the main actor before handing the
@@ -240,7 +262,11 @@ struct VariantDetailView: View {
 
         AppLog.ftDiscovery.debug("Sending to display: \(displayName, privacy: .public) at \(host, privacy: .public):\(port) on layer \(layer)")
 
-        Task {
+        sendTask = Task {
+            defer {
+                isSending = false
+                sendTask = nil
+            }
             do {
                 let client = FTDisplayClient()
                 try await client.send(
@@ -252,11 +278,16 @@ struct VariantDetailView: View {
                     port: port,
                     offset: (x: 0, y: 0, z: layer)
                 )
-                isSending = false
                 AppLog.ftDiscovery.info("Send to display completed")
                 flashSuccess("Sent to \(displayName)")
+            } catch let error as FTDisplayError where error == .cancelled {
+                // User-initiated stop — a neutral outcome, not a failure.
+                AppLog.ftDiscovery.info("Send to display cancelled")
+                flashInfo("Send cancelled")
+            } catch is CancellationError {
+                AppLog.ftDiscovery.info("Send to display cancelled")
+                flashInfo("Send cancelled")
             } catch {
-                isSending = false
                 let message = (error as? FTDisplayError)?.errorDescription ?? error.localizedDescription
                 AppLog.ftDiscovery.error("Send to display failed: \(error.localizedDescription, privacy: .public)")
                 flashError(message)
@@ -267,6 +298,7 @@ struct VariantDetailView: View {
     /// Show a transient success banner (auto-clears after a few seconds).
     private func flashSuccess(_ message: String) {
         errorMessage = nil
+        infoMessage = nil
         successMessage = message
         Task {
             try? await Task.sleep(for: .seconds(3))
@@ -277,10 +309,22 @@ struct VariantDetailView: View {
     /// Show a transient error banner (auto-clears after a few seconds).
     private func flashError(_ message: String) {
         successMessage = nil
+        infoMessage = nil
         errorMessage = message
         Task {
             try? await Task.sleep(for: .seconds(6))
             if errorMessage == message { errorMessage = nil }
+        }
+    }
+
+    /// Show a transient neutral banner (e.g. a cancelled send).
+    private func flashInfo(_ message: String) {
+        successMessage = nil
+        errorMessage = nil
+        infoMessage = message
+        Task {
+            try? await Task.sleep(for: .seconds(3))
+            if infoMessage == message { infoMessage = nil }
         }
     }
 }

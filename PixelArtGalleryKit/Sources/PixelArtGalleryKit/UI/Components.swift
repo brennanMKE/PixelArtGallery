@@ -26,10 +26,30 @@ struct StatusBanner: View {
     enum Kind {
         case success
         case error
+        /// A neutral, non-failure notice (e.g. a user-cancelled action).
+        case info
 
-        var color: Color { self == .success ? .green : .red }
-        var icon: String { self == .success ? "checkmark.circle.fill" : "exclamationmark.circle.fill" }
-        var title: String { self == .success ? "Success" : "Error" }
+        var color: Color {
+            switch self {
+            case .success: return .green
+            case .error: return .red
+            case .info: return .secondary
+            }
+        }
+        var icon: String {
+            switch self {
+            case .success: return "checkmark.circle.fill"
+            case .error: return "exclamationmark.circle.fill"
+            case .info: return "info.circle.fill"
+            }
+        }
+        var title: String {
+            switch self {
+            case .success: return "Success"
+            case .error: return "Error"
+            case .info: return "Info"
+            }
+        }
     }
 
     let kind: Kind
