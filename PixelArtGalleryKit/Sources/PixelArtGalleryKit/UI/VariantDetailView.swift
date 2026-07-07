@@ -114,6 +114,14 @@ struct VariantDetailView: View {
         } message: {
             Text("\(variant.targetWidth)×\(variant.targetHeight) — this can't be undone.")
         }
+        .onDisappear {
+            // Leaving the view stops a continuous send (#0052) so it doesn't keep
+            // pushing frames in the background on Mac or iPhone. Sheets presented
+            // over this view don't trigger onDisappear, so opening export/edit
+            // won't cancel a send. Cancelling is cooperative — the loop's Task
+            // ends and clears `isSending`/`sendTask` (#0050).
+            sendTask?.cancel()
+        }
     }
 
     // MARK: - Sections
