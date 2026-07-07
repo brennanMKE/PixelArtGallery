@@ -1,5 +1,5 @@
+import Testing
 import Foundation
-import XCTest
 @testable import PixelArtGalleryKit
 
 /// Tests for ``GallerySortOrder/sortedForGallery(_:)``, the pure ordering rule
@@ -7,7 +7,7 @@ import XCTest
 /// chosen sort, and the pinned and unpinned groups are each ordered by that
 /// sort.
 @MainActor
-final class GallerySortOrderTests: XCTestCase {
+@Suite struct GallerySortOrderTests {
 
     /// A reference date so imported dates are deterministic; items are offset
     /// from it in whole days.
@@ -34,7 +34,7 @@ final class GallerySortOrderTests: XCTestCase {
 
     // MARK: - Pinned items lead
 
-    func testPinnedItemsLeadRegardlessOfSortOrder() {
+    @Test func pinnedItemsLeadRegardlessOfSortOrder() {
         // The pinned items ("Yak", "Zebra") would sort last by name ascending
         // and are also the oldest, so every order has to fight for them.
         let items = [
@@ -46,18 +46,14 @@ final class GallerySortOrderTests: XCTestCase {
 
         for order in GallerySortOrder.allCases {
             let sorted = order.sortedForGallery(items)
-            XCTAssertTrue(
-                sorted.prefix(2).allSatisfy(\.isPinned),
-                "\(order) should lead with the pinned items"
-            )
-            XCTAssertTrue(
-                sorted.dropFirst(2).allSatisfy { !$0.isPinned },
-                "\(order) should keep unpinned items after the pinned group"
-            )
+            let leadsWithPinned = sorted.prefix(2).allSatisfy(\.isPinned)
+            #expect(leadsWithPinned, "\(order) should lead with the pinned items")
+            let restUnpinned = sorted.dropFirst(2).allSatisfy { !$0.isPinned }
+            #expect(restUnpinned, "\(order) should keep unpinned items after the pinned group")
         }
     }
 
-    func testPinnedGroupUsesChosenSortWithinGroup() {
+    @Test func pinnedGroupUsesChosenSortWithinGroup() {
         let items = [
             makeItem(name: "Apple", daysAgo: 0),
             makeItem(name: "Yak", daysAgo: 9, pinned: true),
@@ -65,12 +61,12 @@ final class GallerySortOrderTests: XCTestCase {
         ]
 
         // Zebra is newer than Yak, so newest-first leads with Zebra…
-        XCTAssertEqual(names(.newestFirst, items), ["Zebra", "Yak", "Apple"])
+        #expect(names(.newestFirst, items) == ["Zebra", "Yak", "Apple"])
         // …oldest-first with Yak…
-        XCTAssertEqual(names(.oldestFirst, items), ["Yak", "Zebra", "Apple"])
+        #expect(names(.oldestFirst, items) == ["Yak", "Zebra", "Apple"])
         // …and the name sorts order the pinned pair alphabetically.
-        XCTAssertEqual(names(.nameAscending, items), ["Yak", "Zebra", "Apple"])
-        XCTAssertEqual(names(.nameDescending, items), ["Zebra", "Yak", "Apple"])
+        #expect(names(.nameAscending, items) == ["Yak", "Zebra", "Apple"])
+        #expect(names(.nameDescending, items) == ["Zebra", "Yak", "Apple"])
     }
 
     // MARK: - Each sort order (no pins involved)
@@ -83,49 +79,49 @@ final class GallerySortOrderTests: XCTestCase {
         ]
     }
 
-    func testNewestFirstWithNoPinnedItems() {
-        XCTAssertEqual(names(.newestFirst, unpinnedItems), ["apple", "Banana", "Cherry"])
+    @Test func newestFirstWithNoPinnedItems() {
+        #expect(names(.newestFirst, unpinnedItems) == ["apple", "Banana", "Cherry"])
     }
 
-    func testOldestFirstWithNoPinnedItems() {
-        XCTAssertEqual(names(.oldestFirst, unpinnedItems), ["Cherry", "Banana", "apple"])
+    @Test func oldestFirstWithNoPinnedItems() {
+        #expect(names(.oldestFirst, unpinnedItems) == ["Cherry", "Banana", "apple"])
     }
 
-    func testNameAscendingIsCaseInsensitive() {
+    @Test func nameAscendingIsCaseInsensitive() {
         // localizedStandardCompare puts "apple" before "Banana" despite case.
-        XCTAssertEqual(names(.nameAscending, unpinnedItems), ["apple", "Banana", "Cherry"])
+        #expect(names(.nameAscending, unpinnedItems) == ["apple", "Banana", "Cherry"])
     }
 
-    func testNameDescendingWithNoPinnedItems() {
-        XCTAssertEqual(names(.nameDescending, unpinnedItems), ["Cherry", "Banana", "apple"])
+    @Test func nameDescendingWithNoPinnedItems() {
+        #expect(names(.nameDescending, unpinnedItems) == ["Cherry", "Banana", "apple"])
     }
 
-    func testNameAscendingUsesNumericFinderStyleComparison() {
+    @Test func nameAscendingUsesNumericFinderStyleComparison() {
         let items = [
             makeItem(name: "Frame 10", daysAgo: 0),
             makeItem(name: "Frame 2", daysAgo: 1)
         ]
-        XCTAssertEqual(names(.nameAscending, items), ["Frame 2", "Frame 10"])
+        #expect(names(.nameAscending, items) == ["Frame 2", "Frame 10"])
     }
 
     // MARK: - Determinism
 
-    func testEqualNamesTieBreakByNewestFirst() {
+    @Test func equalNamesTieBreakByNewestFirst() {
         let older = makeItem(name: "Same", daysAgo: 5)
         let newer = makeItem(name: "Same", daysAgo: 1)
 
         for order in [GallerySortOrder.nameAscending, .nameDescending] {
             let sorted = order.sortedForGallery([older, newer])
-            XCTAssertEqual(
-                sorted.map(\.importedDate), [newer.importedDate, older.importedDate],
+            #expect(
+                sorted.map(\.importedDate) == [newer.importedDate, older.importedDate],
                 "\(order) should break name ties newest-first"
             )
         }
     }
 
-    func testEmptyInputReturnsEmpty() {
+    @Test func emptyInputReturnsEmpty() {
         for order in GallerySortOrder.allCases {
-            XCTAssertTrue(order.sortedForGallery([]).isEmpty)
+            #expect(order.sortedForGallery([]).isEmpty)
         }
     }
 }

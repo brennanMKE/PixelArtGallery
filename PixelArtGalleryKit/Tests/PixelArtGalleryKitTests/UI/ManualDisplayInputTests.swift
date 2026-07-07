@@ -1,7 +1,7 @@
-import XCTest
+import Testing
 @testable import PixelArtGalleryKit
 
-final class ManualDisplayInputTests: XCTestCase {
+@Suite struct ManualDisplayInputTests {
     private func makeInput(
         host: String = "192.168.1.50",
         port: String = "1337",
@@ -12,67 +12,71 @@ final class ManualDisplayInputTests: XCTestCase {
         ManualDisplayInput(host: host, port: port, displayName: displayName, width: width, height: height)
     }
 
-    func testValidInputProducesValidatedValues() {
+    @Test func validInputProducesValidatedValues() throws {
         let result = makeInput().validate()
         guard case .success(let validated) = result else {
-            return XCTFail("expected success, got \(result)")
+            Issue.record("expected success, got \(result)")
+            return
         }
-        XCTAssertEqual(validated.host, "192.168.1.50")
-        XCTAssertEqual(validated.port, 1337)
-        XCTAssertEqual(validated.displayName, "Office Wall")
-        XCTAssertEqual(validated.width, 64)
-        XCTAssertEqual(validated.height, 32)
-        XCTAssertTrue(makeInput().isValid)
+        #expect(validated.host == "192.168.1.50")
+        #expect(validated.port == 1337)
+        #expect(validated.displayName == "Office Wall")
+        #expect(validated.width == 64)
+        #expect(validated.height == 32)
+        #expect(makeInput().isValid)
     }
 
-    func testHostIsTrimmedAndEmptyHostFails() {
+    @Test func hostIsTrimmedAndEmptyHostFails() {
         // Whitespace is trimmed for a real host.
         guard case .success(let validated) = makeInput(host: "  10.0.0.2  ").validate() else {
-            return XCTFail("expected trimmed host to validate")
+            Issue.record("expected trimmed host to validate")
+            return
         }
-        XCTAssertEqual(validated.host, "10.0.0.2")
+        #expect(validated.host == "10.0.0.2")
 
         // Empty / whitespace-only host fails.
-        XCTAssertEqual(makeInput(host: "").validate(), .failure(.emptyHost))
-        XCTAssertEqual(makeInput(host: "   ").validate(), .failure(.emptyHost))
-        XCTAssertFalse(makeInput(host: "").isValid)
+        #expect(makeInput(host: "").validate() == .failure(.emptyHost))
+        #expect(makeInput(host: "   ").validate() == .failure(.emptyHost))
+        #expect(!makeInput(host: "").isValid)
     }
 
-    func testEmptyDisplayNameFallsBackToHost() {
+    @Test func emptyDisplayNameFallsBackToHost() {
         guard case .success(let validated) = makeInput(displayName: "   ").validate() else {
-            return XCTFail("expected success")
+            Issue.record("expected success")
+            return
         }
-        XCTAssertEqual(validated.displayName, "192.168.1.50")
+        #expect(validated.displayName == "192.168.1.50")
     }
 
-    func testPortBounds() {
-        XCTAssertEqual(makeInput(port: "0").validate(), .failure(.invalidPort))
-        XCTAssertEqual(makeInput(port: "65536").validate(), .failure(.invalidPort))
-        XCTAssertEqual(makeInput(port: "-1").validate(), .failure(.invalidPort))
-        XCTAssertEqual(makeInput(port: "abc").validate(), .failure(.invalidPort))
-        XCTAssertEqual(makeInput(port: "").validate(), .failure(.invalidPort))
+    @Test func portBounds() {
+        #expect(makeInput(port: "0").validate() == .failure(.invalidPort))
+        #expect(makeInput(port: "65536").validate() == .failure(.invalidPort))
+        #expect(makeInput(port: "-1").validate() == .failure(.invalidPort))
+        #expect(makeInput(port: "abc").validate() == .failure(.invalidPort))
+        #expect(makeInput(port: "").validate() == .failure(.invalidPort))
 
         // Boundary values are accepted.
-        if case .failure = makeInput(port: "1").validate() { XCTFail("port 1 should be valid") }
-        if case .failure = makeInput(port: "65535").validate() { XCTFail("port 65535 should be valid") }
+        if case .failure = makeInput(port: "1").validate() { Issue.record("port 1 should be valid") }
+        if case .failure = makeInput(port: "65535").validate() { Issue.record("port 65535 should be valid") }
     }
 
-    func testDimensionParsing() {
-        XCTAssertEqual(makeInput(width: "0").validate(), .failure(.invalidWidth))
-        XCTAssertEqual(makeInput(width: "-5").validate(), .failure(.invalidWidth))
-        XCTAssertEqual(makeInput(width: "x").validate(), .failure(.invalidWidth))
-        XCTAssertEqual(makeInput(height: "0").validate(), .failure(.invalidHeight))
-        XCTAssertEqual(makeInput(height: "").validate(), .failure(.invalidHeight))
+    @Test func dimensionParsing() {
+        #expect(makeInput(width: "0").validate() == .failure(.invalidWidth))
+        #expect(makeInput(width: "-5").validate() == .failure(.invalidWidth))
+        #expect(makeInput(width: "x").validate() == .failure(.invalidWidth))
+        #expect(makeInput(height: "0").validate() == .failure(.invalidHeight))
+        #expect(makeInput(height: "").validate() == .failure(.invalidHeight))
 
         guard case .success(let validated) = makeInput(width: " 128 ", height: "96").validate() else {
-            return XCTFail("expected success for valid dimensions")
+            Issue.record("expected success for valid dimensions")
+            return
         }
-        XCTAssertEqual(validated.width, 128)
-        XCTAssertEqual(validated.height, 96)
+        #expect(validated.width == 128)
+        #expect(validated.height == 96)
     }
 
-    func testValidationPriorityHostBeforePort() {
+    @Test func validationPriorityHostBeforePort() {
         // Host check runs before port check.
-        XCTAssertEqual(makeInput(host: "", port: "0").validate(), .failure(.emptyHost))
+        #expect(makeInput(host: "", port: "0").validate() == .failure(.emptyHost))
     }
 }

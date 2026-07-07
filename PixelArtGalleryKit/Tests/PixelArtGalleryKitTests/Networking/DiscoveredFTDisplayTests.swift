@@ -1,15 +1,16 @@
-import XCTest
+import Testing
+import Foundation
 @testable import PixelArtGalleryKit
 
 /// Device-free tests for the discovery result model: TXT-record parsing and
 /// conversion into a `FlaschenTaschenDisplay`. The live `NWBrowser` path in
 /// `FTDiscoveryService` requires a real network with an FT display advertising
 /// and cannot be exercised headlessly; these tests cover everything around it.
-final class DiscoveredFTDisplayTests: XCTestCase {
+@Suite struct DiscoveredFTDisplayTests {
 
     // MARK: - TXT parsing
 
-    func testMakeParsesWidthAndHeightFromTXT() {
+    @Test func makeParsesWidthAndHeightFromTXT() {
         let discovered = DiscoveredFTDisplay.make(
             host: "192.168.1.50",
             port: 1337,
@@ -17,14 +18,14 @@ final class DiscoveredFTDisplayTests: XCTestCase {
             txtRecord: ["width": "64", "height": "32"]
         )
 
-        XCTAssertEqual(discovered.host, "192.168.1.50")
-        XCTAssertEqual(discovered.port, 1337)
-        XCTAssertEqual(discovered.serviceName, "Office Wall")
-        XCTAssertEqual(discovered.displayWidth, 64)
-        XCTAssertEqual(discovered.displayHeight, 32)
+        #expect(discovered.host == "192.168.1.50")
+        #expect(discovered.port == 1337)
+        #expect(discovered.serviceName == "Office Wall")
+        #expect(discovered.displayWidth == 64)
+        #expect(discovered.displayHeight == 32)
     }
 
-    func testMakeAcceptsShortAliasKeys() {
+    @Test func makeAcceptsShortAliasKeys() {
         let discovered = DiscoveredFTDisplay.make(
             host: "ft.local",
             port: 1337,
@@ -32,11 +33,11 @@ final class DiscoveredFTDisplayTests: XCTestCase {
             txtRecord: ["w": "45", "h": "35"]
         )
 
-        XCTAssertEqual(discovered.displayWidth, 45)
-        XCTAssertEqual(discovered.displayHeight, 35)
+        #expect(discovered.displayWidth == 45)
+        #expect(discovered.displayHeight == 35)
     }
 
-    func testMakeIsCaseInsensitiveForKeys() {
+    @Test func makeIsCaseInsensitiveForKeys() {
         let discovered = DiscoveredFTDisplay.make(
             host: "ft.local",
             port: 1337,
@@ -44,11 +45,11 @@ final class DiscoveredFTDisplayTests: XCTestCase {
             txtRecord: ["Width": "100", "HEIGHT": "80"]
         )
 
-        XCTAssertEqual(discovered.displayWidth, 100)
-        XCTAssertEqual(discovered.displayHeight, 80)
+        #expect(discovered.displayWidth == 100)
+        #expect(discovered.displayHeight == 80)
     }
 
-    func testMakeYieldsNilDimensionsWhenTXTEmpty() {
+    @Test func makeYieldsNilDimensionsWhenTXTEmpty() {
         let discovered = DiscoveredFTDisplay.make(
             host: "ft.local",
             port: 1337,
@@ -56,11 +57,11 @@ final class DiscoveredFTDisplayTests: XCTestCase {
             txtRecord: [:]
         )
 
-        XCTAssertNil(discovered.displayWidth)
-        XCTAssertNil(discovered.displayHeight)
+        #expect(discovered.displayWidth == nil)
+        #expect(discovered.displayHeight == nil)
     }
 
-    func testMakeIgnoresNonPositiveOrUnparseableValues() {
+    @Test func makeIgnoresNonPositiveOrUnparseableValues() {
         let discovered = DiscoveredFTDisplay.make(
             host: "ft.local",
             port: 1337,
@@ -68,11 +69,11 @@ final class DiscoveredFTDisplayTests: XCTestCase {
             txtRecord: ["width": "0", "height": "tall"]
         )
 
-        XCTAssertNil(discovered.displayWidth)
-        XCTAssertNil(discovered.displayHeight)
+        #expect(discovered.displayWidth == nil)
+        #expect(discovered.displayHeight == nil)
     }
 
-    func testMakeTrimsWhitespaceAroundValues() {
+    @Test func makeTrimsWhitespaceAroundValues() {
         let discovered = DiscoveredFTDisplay.make(
             host: "ft.local",
             port: 1337,
@@ -80,14 +81,14 @@ final class DiscoveredFTDisplayTests: XCTestCase {
             txtRecord: ["width": " 48 ", "height": " 24 "]
         )
 
-        XCTAssertEqual(discovered.displayWidth, 48)
-        XCTAssertEqual(discovered.displayHeight, 24)
+        #expect(discovered.displayWidth == 48)
+        #expect(discovered.displayHeight == 24)
     }
 
     // MARK: - Conversion to FlaschenTaschenDisplay
 
     @MainActor
-    func testMakeDisplayModelUsesAdvertisedDimensionsAndMdnsSource() {
+    @Test func makeDisplayModelUsesAdvertisedDimensionsAndMdnsSource() {
         let discovered = DiscoveredFTDisplay(
             host: "10.0.0.7",
             port: 1337,
@@ -98,18 +99,18 @@ final class DiscoveredFTDisplayTests: XCTestCase {
 
         let model = discovered.makeDisplayModel()
 
-        XCTAssertEqual(model.host, "10.0.0.7")
-        XCTAssertEqual(model.port, 1337)
-        XCTAssertEqual(model.displayName, "Break Room")
-        XCTAssertEqual(model.displayWidth, 64)
-        XCTAssertEqual(model.displayHeight, 64)
-        XCTAssertEqual(model.source, "mdns")
-        XCTAssertEqual(model.endpoint, "10.0.0.7:1337")
-        XCTAssertEqual(model.resolution, "64×64")
+        #expect(model.host == "10.0.0.7")
+        #expect(model.port == 1337)
+        #expect(model.displayName == "Break Room")
+        #expect(model.displayWidth == 64)
+        #expect(model.displayHeight == 64)
+        #expect(model.source == "mdns")
+        #expect(model.endpoint == "10.0.0.7:1337")
+        #expect(model.resolution == "64×64")
     }
 
     @MainActor
-    func testMakeDisplayModelFallsBackToDefaultsWhenDimensionsMissing() {
+    @Test func makeDisplayModelFallsBackToDefaultsWhenDimensionsMissing() {
         let discovered = DiscoveredFTDisplay(
             host: "ft.local",
             port: 1337,
@@ -118,13 +119,13 @@ final class DiscoveredFTDisplayTests: XCTestCase {
 
         let model = discovered.makeDisplayModel(defaultWidth: 45, defaultHeight: 35)
 
-        XCTAssertEqual(model.displayWidth, 45)
-        XCTAssertEqual(model.displayHeight, 35)
-        XCTAssertEqual(model.source, "mdns")
+        #expect(model.displayWidth == 45)
+        #expect(model.displayHeight == 35)
+        #expect(model.source == "mdns")
     }
 
     @MainActor
-    func testMakeDisplayModelRecordsProvidedDiscoveredDate() {
+    @Test func makeDisplayModelRecordsProvidedDiscoveredDate() {
         let when = Date(timeIntervalSince1970: 1_000_000)
         let discovered = DiscoveredFTDisplay(
             host: "ft.local",
@@ -134,6 +135,6 @@ final class DiscoveredFTDisplayTests: XCTestCase {
 
         let model = discovered.makeDisplayModel(discoveredDate: when)
 
-        XCTAssertEqual(model.discoveredDate, when)
+        #expect(model.discoveredDate == when)
     }
 }

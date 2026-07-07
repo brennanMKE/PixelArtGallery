@@ -1,5 +1,5 @@
+import Testing
 import Foundation
-import XCTest
 @testable import PixelArtGalleryKit
 
 /// Tests for ``FlaschenTaschenDisplay/preferredSelection(current:among:)``,
@@ -7,7 +7,7 @@ import XCTest
 /// (#0032): prefer the seeded default display, fall back to the first, and
 /// never stomp a still-valid existing selection.
 @MainActor
-final class DisplayPreferredSelectionTests: XCTestCase {
+@Suite struct DisplayPreferredSelectionTests {
 
     private let defaultID = UUID()
     private let manualID = UUID()
@@ -23,33 +23,33 @@ final class DisplayPreferredSelectionTests: XCTestCase {
         ]
     }
 
-    func testPrefersDefaultSourceWhenNoCurrentSelection() {
+    @Test func prefersDefaultSourceWhenNoCurrentSelection() {
         let selected = FlaschenTaschenDisplay.preferredSelection(current: nil, among: candidates)
-        XCTAssertEqual(selected, defaultID)
+        #expect(selected == defaultID)
     }
 
-    func testFallsBackToFirstWhenNoDefaultSource() {
+    @Test func fallsBackToFirstWhenNoDefaultSource() {
         let noDefault: [(id: UUID, source: String)] = [
             (id: manualID, source: "manual"),
             (id: mdnsID, source: "mdns")
         ]
         let selected = FlaschenTaschenDisplay.preferredSelection(current: nil, among: noDefault)
-        XCTAssertEqual(selected, manualID)
+        #expect(selected == manualID)
     }
 
-    func testKeepsValidExistingSelectionOverDefault() {
+    @Test func keepsValidExistingSelectionOverDefault() {
         let selected = FlaschenTaschenDisplay.preferredSelection(current: mdnsID, among: candidates)
-        XCTAssertEqual(selected, mdnsID)
+        #expect(selected == mdnsID)
     }
 
-    func testReplacesStaleSelectionWithDefault() {
+    @Test func replacesStaleSelectionWithDefault() {
         let removedID = UUID()
         let selected = FlaschenTaschenDisplay.preferredSelection(current: removedID, among: candidates)
-        XCTAssertEqual(selected, defaultID)
+        #expect(selected == defaultID)
     }
 
-    func testReturnsNilWhenNoCandidates() {
+    @Test func returnsNilWhenNoCandidates() {
         let selected = FlaschenTaschenDisplay.preferredSelection(current: manualID, among: [])
-        XCTAssertNil(selected)
+        #expect(selected == nil)
     }
 }

@@ -1,4 +1,4 @@
-import XCTest
+import Testing
 import SwiftData
 @testable import PixelArtGalleryKit
 
@@ -12,7 +12,7 @@ import SwiftData
 /// and cannot be exercised headlessly — only the merge that follows discovery is
 /// covered here.
 @MainActor
-final class DisplayMergeTests: XCTestCase {
+@Suite struct DisplayMergeTests {
 
     /// A fresh in-memory SwiftData context for the registry model.
     private func makeContext() throws -> ModelContext {
@@ -36,16 +36,16 @@ final class DisplayMergeTests: XCTestCase {
 
     // MARK: - Pure plan logic
 
-    func testPlanInsertsAllWhenRegistryEmpty() {
+    @Test func planInsertsAllWhenRegistryEmpty() {
         let plan = DisplayMergePlan.build(
             existing: [],
             discovered: [discovered(host: "a.local"), discovered(host: "b.local")]
         )
-        XCTAssertEqual(plan.insertions.count, 2)
-        XCTAssertEqual(plan.updates.count, 0)
+        #expect(plan.insertions.count == 2)
+        #expect(plan.updates.count == 0)
     }
 
-    func testPlanCollapsesDuplicateDiscoveriesByEndpoint() {
+    @Test func planCollapsesDuplicateDiscoveriesByEndpoint() {
         let plan = DisplayMergePlan.build(
             existing: [],
             discovered: [
@@ -53,24 +53,24 @@ final class DisplayMergeTests: XCTestCase {
                 discovered(host: "A.LOCAL", name: "second"), // same endpoint, different case
             ]
         )
-        XCTAssertEqual(plan.insertions.count, 1)
-        XCTAssertEqual(plan.insertions.first?.serviceName, "second") // last wins
+        #expect(plan.insertions.count == 1)
+        #expect(plan.insertions.first?.serviceName == "second") // last wins
     }
 
-    func testKeyIsCaseInsensitiveAndPortSensitive() {
-        XCTAssertEqual(
-            DisplayMergePlan.key(host: "FT.local", port: 1337),
+    @Test func keyIsCaseInsensitiveAndPortSensitive() {
+        #expect(
+            DisplayMergePlan.key(host: "FT.local", port: 1337) ==
             DisplayMergePlan.key(host: "ft.local", port: 1337)
         )
-        XCTAssertNotEqual(
-            DisplayMergePlan.key(host: "ft.local", port: 1337),
+        #expect(
+            DisplayMergePlan.key(host: "ft.local", port: 1337) !=
             DisplayMergePlan.key(host: "ft.local", port: 1338)
         )
     }
 
     // MARK: - Applied merge over a ModelContext
 
-    func testMergeInsertsNewDisplaysAsMdns() throws {
+    @Test func mergeInsertsNewDisplaysAsMdns() throws {
         let context = try makeContext()
         let coordinator = GalleryCoordinator()
         coordinator.configure(modelContext: context)
@@ -79,17 +79,17 @@ final class DisplayMergeTests: XCTestCase {
             discovered(host: "10.0.0.1", name: "Office", width: 64, height: 32),
         ])
 
-        XCTAssertEqual(result.inserted, 1)
-        XCTAssertEqual(result.updated, 0)
+        #expect(result.inserted == 1)
+        #expect(result.updated == 0)
 
         let stored = try context.fetch(FetchDescriptor<FlaschenTaschenDisplay>())
-        XCTAssertEqual(stored.count, 1)
-        XCTAssertEqual(stored.first?.source, "mdns")
-        XCTAssertEqual(stored.first?.displayWidth, 64)
-        XCTAssertEqual(stored.first?.displayHeight, 32)
+        #expect(stored.count == 1)
+        #expect(stored.first?.source == "mdns")
+        #expect(stored.first?.displayWidth == 64)
+        #expect(stored.first?.displayHeight == 32)
     }
 
-    func testMergeDeDupesAgainstExistingByHostAndPort() throws {
+    @Test func mergeDeDupesAgainstExistingByHostAndPort() throws {
         let context = try makeContext()
         let coordinator = GalleryCoordinator()
         coordinator.configure(modelContext: context)
@@ -107,18 +107,18 @@ final class DisplayMergeTests: XCTestCase {
             discovered(host: "10.0.0.1", name: "New Name", width: 64, height: 64),
         ])
 
-        XCTAssertEqual(result.inserted, 0)
-        XCTAssertEqual(result.updated, 1)
+        #expect(result.inserted == 0)
+        #expect(result.updated == 1)
 
         let stored = try context.fetch(FetchDescriptor<FlaschenTaschenDisplay>())
-        XCTAssertEqual(stored.count, 1, "Should update in place, not duplicate")
-        XCTAssertEqual(stored.first?.displayName, "New Name")
-        XCTAssertEqual(stored.first?.displayWidth, 64)
-        XCTAssertEqual(stored.first?.displayHeight, 64)
-        XCTAssertEqual(stored.first?.source, "mdns")
+        #expect(stored.count == 1, "Should update in place, not duplicate")
+        #expect(stored.first?.displayName == "New Name")
+        #expect(stored.first?.displayWidth == 64)
+        #expect(stored.first?.displayHeight == 64)
+        #expect(stored.first?.source == "mdns")
     }
 
-    func testMergeHandlesMixedInsertAndUpdate() throws {
+    @Test func mergeHandlesMixedInsertAndUpdate() throws {
         let context = try makeContext()
         let coordinator = GalleryCoordinator()
         coordinator.configure(modelContext: context)
@@ -135,33 +135,33 @@ final class DisplayMergeTests: XCTestCase {
             discovered(host: "10.0.0.2", name: "Brand New", width: 45, height: 35),
         ])
 
-        XCTAssertEqual(result.inserted, 1)
-        XCTAssertEqual(result.updated, 1)
+        #expect(result.inserted == 1)
+        #expect(result.updated == 1)
 
         let stored = try context.fetch(FetchDescriptor<FlaschenTaschenDisplay>())
-        XCTAssertEqual(stored.count, 2)
+        #expect(stored.count == 2)
     }
 
-    func testMergeWithEmptyDiscoveryIsNoOp() throws {
+    @Test func mergeWithEmptyDiscoveryIsNoOp() throws {
         let context = try makeContext()
         let coordinator = GalleryCoordinator()
         coordinator.configure(modelContext: context)
 
         let result = coordinator.mergeDiscoveredDisplays([])
-        XCTAssertEqual(result.inserted, 0)
-        XCTAssertEqual(result.updated, 0)
+        #expect(result.inserted == 0)
+        #expect(result.updated == 0)
     }
 
-    func testMergeWithoutContextReturnsZero() {
+    @Test func mergeWithoutContextReturnsZero() {
         let coordinator = GalleryCoordinator()
         let result = coordinator.mergeDiscoveredDisplays([discovered(host: "x")])
-        XCTAssertEqual(result.inserted, 0)
-        XCTAssertEqual(result.updated, 0)
+        #expect(result.inserted == 0)
+        #expect(result.updated == 0)
     }
 
     // MARK: - Rename / delete
 
-    func testRenameDisplayPersists() throws {
+    @Test func renameDisplayPersists() throws {
         let context = try makeContext()
         let coordinator = GalleryCoordinator()
         coordinator.configure(modelContext: context)
@@ -174,13 +174,13 @@ final class DisplayMergeTests: XCTestCase {
         try context.save()
 
         coordinator.renameDisplay(display, to: "  After  ")
-        XCTAssertEqual(display.displayName, "After", "Name is trimmed and saved")
+        #expect(display.displayName == "After", "Name is trimmed and saved")
 
         coordinator.renameDisplay(display, to: "   ")
-        XCTAssertEqual(display.displayName, "After", "Empty rename is rejected")
+        #expect(display.displayName == "After", "Empty rename is rejected")
     }
 
-    func testDeleteDisplayRemovesIt() throws {
+    @Test func deleteDisplayRemovesIt() throws {
         let context = try makeContext()
         let coordinator = GalleryCoordinator()
         coordinator.configure(modelContext: context)
@@ -195,6 +195,6 @@ final class DisplayMergeTests: XCTestCase {
         coordinator.deleteDisplay(display)
 
         let stored = try context.fetch(FetchDescriptor<FlaschenTaschenDisplay>())
-        XCTAssertTrue(stored.isEmpty)
+        #expect(stored.isEmpty)
     }
 }

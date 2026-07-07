@@ -1,4 +1,5 @@
-import XCTest
+import Testing
+import Foundation
 @testable import PixelArtGalleryKit
 
 /// Device-free tests for the platform-agnostic logic in `PhotoLibrarySaver`.
@@ -7,32 +8,27 @@ import XCTest
 /// cannot be exercised headlessly. These tests cover the pure format-eligibility logic and the
 /// guard that rejects non-raster formats before any authorization request is made. Regression
 /// for #0008, where iOS had no export destination at all.
-final class PhotoLibrarySaverTests: XCTestCase {
+@Suite struct PhotoLibrarySaverTests {
 
-    func testRasterFormatsAreEligibleForPhotos() {
-        XCTAssertTrue(PhotoLibrarySaver.canSaveToPhotos(.png))
-        XCTAssertTrue(PhotoLibrarySaver.canSaveToPhotos(.heic))
+    @Test func rasterFormatsAreEligibleForPhotos() {
+        #expect(PhotoLibrarySaver.canSaveToPhotos(.png))
+        #expect(PhotoLibrarySaver.canSaveToPhotos(.heic))
     }
 
-    func testNonRasterFormatsAreNotEligibleForPhotos() {
-        XCTAssertFalse(PhotoLibrarySaver.canSaveToPhotos(.ppm))
-        XCTAssertFalse(PhotoLibrarySaver.canSaveToPhotos(.json))
+    @Test func nonRasterFormatsAreNotEligibleForPhotos() {
+        #expect(!PhotoLibrarySaver.canSaveToPhotos(.ppm))
+        #expect(!PhotoLibrarySaver.canSaveToPhotos(.json))
     }
 
     /// A non-raster format must be rejected before any authorization / change request, on every
     /// platform, with `.unsupportedFormat`.
-    func testSaveToPhotosRejectsNonRasterFormat() async {
+    @Test func saveToPhotosRejectsNonRasterFormat() async {
         let saver = PhotoLibrarySaver()
         let dummyURL = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("matrix.json")
 
-        do {
+        await #expect(throws: PhotoLibrarySaveError.unsupportedFormat(format: "JSON")) {
             try await saver.saveToPhotos(fileURL: dummyURL, format: .json)
-            XCTFail("Expected saveToPhotos to throw for a non-raster format")
-        } catch let error as PhotoLibrarySaveError {
-            XCTAssertEqual(error, .unsupportedFormat(format: "JSON"))
-        } catch {
-            XCTFail("Unexpected error type: \(error)")
         }
     }
 }
