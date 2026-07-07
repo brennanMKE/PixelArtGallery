@@ -167,16 +167,20 @@ public actor FTDisplayClient {
 
     // MARK: - Packet construction
 
-    /// FT footer command-byte prefix. The footer is `0x00` followed by the ASCII
-    /// offsets, allowing the receiver to distinguish it from PPM pixel data.
-    private static let footerStart: UInt8 = 0x00
-
-    /// Build the full FT datagram: a P6 PPM payload plus an offset footer.
+    /// Build the full FT datagram: a P6 PPM payload carrying the paint offset and
+    /// layer as a `#FT:` header comment.
     ///
-    /// The PPM payload is produced by ``VariantExporter`` so the encoding matches
-    /// the file-export path exactly. The footer is `<0x00><x>\n<y>\n<z>\n`, which
-    /// is the form the FT server parses for paint offsets; an all-zero offset is a
-    /// full-frame paint at the origin and is always safe.
+    /// The PPM payload is produced by ``VariantExporter`` so the pixel encoding
+    /// matches the file-export path exactly. The offset/layer is then injected as
+    /// a PPM header comment `#FT: <x> <y> <z>` (placed between the dimensions line
+    /// and the `255` maxval), which is the exact form the reference FT client
+    /// emits and every FT server parses (`server/ppm-reader.cc`).
+    ///
+    /// This replaces an earlier trailing footer that prefixed the offsets with a
+    /// `0x00` byte: the server parses trailing offsets with `strtol` after
+    /// `isspace`-skipping, and a NUL is neither a digit nor whitespace, so the
+    /// parser bailed on the first field and the layer silently fell back to 0
+    /// (the background). See #0051.
     ///
     /// `nonisolated` so it can be unit-tested without entering the actor.
     nonisolated static func makePacket(
@@ -199,9 +203,38 @@ public actor FTDisplayClient {
             throw FTDisplayError.encodingFailed(error.localizedDescription)
         }
 
-        var packet = ppm
-        packet.append(footerStart)
-        packet.append(Data("\(offset.x)\n\(offset.y)\n\(offset.z)\n".utf8))
+        return insertingFTComment(into: ppm, offset: offset)
+    }
+
+    /// Insert `#FT: <x> <y> <z>\n` into a P6 PPM header, right after the
+    /// `<width> <height>` line (i.e. just past the second newline) so the result
+    /// is `P6\n<W> <H>\n#FT: <x> <y> <z>\n255\n<pixels>`. If the header does not
+    /// have the expected two leading newlines it is returned unchanged.
+    nonisolated private static func insertingFTComment(
+        into ppm: Data,
+        offset: (x: Int, y: Int, z: Int)
+    ) -> Data {
+        let newline: UInt8 = 0x0A
+        // Count of bytes up to and including the second newline (end of the
+        // `P6\n<W> <H>\n` prefix). enumerated() yields 0-based positions, so the
+        // count is that index + 1 — independent of Data's slice base.
+        var newlineCount = 0
+        var prefixLength: Int?
+        for (position, byte) in ppm.enumerated() where byte == newline {
+            newlineCount += 1
+            if newlineCount == 2 {
+                prefixLength = position + 1
+                break
+            }
+        }
+        guard let prefixLength else { return ppm }
+
+        let comment = Data("#FT: \(offset.x) \(offset.y) \(offset.z)\n".utf8)
+        var packet = Data()
+        packet.reserveCapacity(ppm.count + comment.count)
+        packet.append(ppm.prefix(prefixLength))
+        packet.append(comment)
+        packet.append(ppm.dropFirst(prefixLength))
         return packet
     }
 
