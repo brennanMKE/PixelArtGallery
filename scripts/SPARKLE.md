@@ -24,7 +24,7 @@ the exact tool invocations, and the per-release appcast-item flow.
   `Commands` block replacing `.appInfo`: "About Pixel Art Gallery" plus
   "Check for Updates…" invoking `UpdaterController.shared.checkForUpdates()`.
 - **Info.plist keys** — the macOS build uses a real plist file,
-  `PixelArtGallery/Info-macOS.plist` (iOS keeps its generated plist), which
+  `Configuration/Info-macOS.plist` (iOS keeps its generated plist), which
   carries:
   - `SUFeedURL` = `https://pixelartgallery.sstools.co/appcast.xml`
   - `SUPublicEDKey` = `tQZNcNn4+PYvilca5jBXoPx6XHxM6mCYrwWh3pzl+H0=`
@@ -61,7 +61,7 @@ prefixed explicitly.
 
 ```sh
 # Print the public key for the existing keypair (sanity check — must match
-# SUPublicEDKey in PixelArtGallery/Info-macOS.plist):
+# SUPublicEDKey in Configuration/Info-macOS.plist):
 generate_keys -p --account PixelArtGallery
 
 # BACKUP the private key to an offline file (do this once; store offline):
