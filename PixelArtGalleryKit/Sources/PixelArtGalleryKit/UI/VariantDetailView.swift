@@ -36,6 +36,12 @@ struct VariantDetailView: View {
                 exportSection
                 sendSection
 
+                if isSending {
+                    StatusBanner(
+                        kind: .info,
+                        message: "Sending to \(selectedDisplay?.displayName ?? "display")… Tap Stop Sending to end."
+                    )
+                }
                 if let successMessage {
                     StatusBanner(kind: .success, message: successMessage)
                 }
@@ -47,6 +53,7 @@ struct VariantDetailView: View {
                 }
             }
             .padding()
+            .animation(.default, value: isSending)
             .animation(.default, value: successMessage)
             .animation(.default, value: errorMessage)
             .animation(.default, value: infoMessage)
@@ -231,12 +238,17 @@ struct VariantDetailView: View {
         flashSuccess("Exported \(format) to \(url.lastPathComponent)")
     }
 
+    /// How often the continuous send re-pushes the frame to the display. FT
+    /// servers drop a layer after their layer-timeout (commonly ~15s) if it
+    /// isn't refreshed, so we resend well inside that window to keep the image up.
+    private static let sendRefreshInterval: Duration = .seconds(2)
+
     private func handleSendToDisplay() {
-        // Tapping while a send is in flight stops it (#0050). Cancellation is
-        // cooperative: the client observes it and throws `.cancelled`, and the
-        // Task's catch clears `isSending` and shows a neutral message.
+        // Tapping while sending stops the continuous send (#0050). Cancellation is
+        // cooperative: cancelling the task ends the refresh loop and the client
+        // aborts any in-flight packet.
         if isSending {
-            AppLog.ftDiscovery.info("User requested stop of in-flight send")
+            AppLog.ftDiscovery.info("User requested stop of continuous send")
             sendTask?.cancel()
             return
         }
@@ -259,39 +271,45 @@ struct VariantDetailView: View {
         isSending = true
         errorMessage = nil
         successMessage = nil
+        infoMessage = nil
 
-        AppLog.ftDiscovery.debug("Sending to display: \(displayName, privacy: .public) at \(host, privacy: .public):\(port) on layer \(layer)")
+        AppLog.ftDiscovery.info("Starting continuous send to \(displayName, privacy: .public) at \(host, privacy: .public):\(port) on layer \(layer)")
 
         sendTask = Task {
             defer {
                 isSending = false
                 sendTask = nil
             }
+            let client = FTDisplayClient()
+            var frameCount = 0
             do {
-                let client = FTDisplayClient()
-                try await client.send(
-                    width: width,
-                    height: height,
-                    pixelGridData: pixelGridData,
-                    scaleFactor: scaleFactor,
-                    to: host,
-                    port: port,
-                    offset: (x: 0, y: 0, z: layer)
-                )
-                AppLog.ftDiscovery.info("Send to display completed")
-                flashSuccess("Sent to \(displayName)")
+                // Keep pushing the frame until the user taps Stop (task cancelled).
+                while !Task.isCancelled {
+                    try await client.send(
+                        width: width,
+                        height: height,
+                        pixelGridData: pixelGridData,
+                        scaleFactor: scaleFactor,
+                        to: host,
+                        port: port,
+                        offset: (x: 0, y: 0, z: layer)
+                    )
+                    frameCount += 1
+                    // Sleeping is a cancellation point, so Stop ends the loop promptly.
+                    try await Task.sleep(for: Self.sendRefreshInterval)
+                }
             } catch let error as FTDisplayError where error == .cancelled {
-                // User-initiated stop — a neutral outcome, not a failure.
-                AppLog.ftDiscovery.info("Send to display cancelled")
-                flashInfo("Send cancelled")
+                // User tapped Stop mid-packet — normal exit, fall through below.
             } catch is CancellationError {
-                AppLog.ftDiscovery.info("Send to display cancelled")
-                flashInfo("Send cancelled")
+                // User tapped Stop during the inter-frame sleep — normal exit.
             } catch {
                 let message = (error as? FTDisplayError)?.errorDescription ?? error.localizedDescription
-                AppLog.ftDiscovery.error("Send to display failed: \(error.localizedDescription, privacy: .public)")
+                AppLog.ftDiscovery.error("Continuous send failed after \(frameCount) frame(s): \(error.localizedDescription, privacy: .public)")
                 flashError(message)
+                return
             }
+            AppLog.ftDiscovery.info("Stopped continuous send to \(displayName, privacy: .public) after \(frameCount) frame(s)")
+            flashInfo("Stopped sending to \(displayName)")
         }
     }
 
