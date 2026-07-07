@@ -12,6 +12,7 @@ struct VariantDetailView: View {
     @Query(sort: \FlaschenTaschenDisplay.displayName) private var displays: [FlaschenTaschenDisplay]
 
     @State private var selectedDisplayID: UUID?
+    @State private var sendLayer: Int = FlaschenTaschenDisplay.defaultLayer
     @State private var isSending = false
     @State private var showExportPicker = false
     @State private var isEditingDimensions = false
@@ -163,6 +164,17 @@ struct VariantDetailView: View {
                     }
                 }
 
+                Stepper(value: $sendLayer, in: FlaschenTaschenDisplay.layerRange) {
+                    HStack {
+                        Text("Layer")
+                        Spacer()
+                        Text("\(sendLayer)")
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .disabled(isSending || selectedDisplay == nil)
+
                 Button(action: handleSendToDisplay) {
                     Label(isSending ? "Sending…" : "Send Now", systemImage: "arrow.up.right.circle.fill")
                         .frame(maxWidth: .infinity)
@@ -181,7 +193,19 @@ struct VariantDetailView: View {
                 current: selectedDisplayID,
                 among: displays.map { (id: $0.id, source: $0.source) }
             )
+            seedSendLayer()
         }
+        .onChange(of: selectedDisplayID) {
+            // Reseed the layer from each newly selected display's default.
+            seedSendLayer()
+        }
+    }
+
+    /// Seed the send layer from the selected display's configured default,
+    /// clamped into the valid 1…15 range (#0047).
+    private func seedSendLayer() {
+        guard let display = selectedDisplay else { return }
+        sendLayer = FlaschenTaschenDisplay.clampedLayer(display.layer)
     }
 
     // MARK: - Actions
@@ -206,12 +230,15 @@ struct VariantDetailView: View {
         let height = variant.targetHeight
         let pixelGridData = variant.pixelGridData
         let scaleFactor = variant.scaleFactor
+        // Clamp defensively so the send never carries layer 0 or an out-of-range
+        // value, whatever state the stepper is in (#0047).
+        let layer = FlaschenTaschenDisplay.clampedLayer(sendLayer)
 
         isSending = true
         errorMessage = nil
         successMessage = nil
 
-        AppLog.ftDiscovery.debug("Sending to display: \(displayName, privacy: .public) at \(host, privacy: .public):\(port)")
+        AppLog.ftDiscovery.debug("Sending to display: \(displayName, privacy: .public) at \(host, privacy: .public):\(port) on layer \(layer)")
 
         Task {
             do {
@@ -222,7 +249,8 @@ struct VariantDetailView: View {
                     pixelGridData: pixelGridData,
                     scaleFactor: scaleFactor,
                     to: host,
-                    port: port
+                    port: port,
+                    offset: (x: 0, y: 0, z: layer)
                 )
                 isSending = false
                 AppLog.ftDiscovery.info("Send to display completed")

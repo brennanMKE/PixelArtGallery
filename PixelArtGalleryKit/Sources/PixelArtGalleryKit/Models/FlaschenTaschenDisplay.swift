@@ -32,6 +32,15 @@ public final class FlaschenTaschenDisplay {
     /// ``defaultSource``)
     var source: String // "mdns", "manual", or "default"
 
+    /// Default paint layer (FT z-offset) used when sending to this display (#0047).
+    ///
+    /// Flaschen Taschen composites images by layer; a higher layer paints in
+    /// front. Valid values are ``layerRange`` (1…15) — layer 0 is reserved and
+    /// must never be used. Has an inline default so SwiftData can lightweight-
+    /// migrate existing stores (records created before this property gain
+    /// ``defaultLayer``).
+    var layer: Int = FlaschenTaschenDisplay.defaultLayer
+
     /// Initialize a new FT display entry
     /// - Parameters:
     ///   - host: Hostname or IP address
@@ -48,7 +57,8 @@ public final class FlaschenTaschenDisplay {
         displayWidth: Int,
         displayHeight: Int,
         discoveredDate: Date = Date(),
-        source: String = "manual"
+        source: String = "manual",
+        layer: Int = FlaschenTaschenDisplay.defaultLayer
     ) {
         self.id = UUID()
         self.host = host
@@ -58,10 +68,24 @@ public final class FlaschenTaschenDisplay {
         self.displayHeight = displayHeight
         self.discoveredDate = discoveredDate
         self.source = source
+        self.layer = Self.clampedLayer(layer)
     }
 
     /// The `source` value used for the built-in seeded default display (#0021).
     static let defaultSource = "default"
+
+    /// Valid range for a display's paint layer (FT z-offset), #0047. Layer 0 is
+    /// reserved and never used; the app always paints on 1…15.
+    static let layerRange = 1...15
+
+    /// Default paint layer for a display when none is otherwise chosen (#0047).
+    static let defaultLayer = 5
+
+    /// Clamp an arbitrary integer into ``layerRange`` so a display's layer can
+    /// never be 0 or out of bounds, whatever the source (older store, bad input).
+    static func clampedLayer(_ value: Int) -> Int {
+        min(max(value, layerRange.lowerBound), layerRange.upperBound)
+    }
 
     /// Build the built-in default Flaschen Taschen display: the standard FT
     /// hostname and port with a 45×35 geometry. Seeded on first launch so the

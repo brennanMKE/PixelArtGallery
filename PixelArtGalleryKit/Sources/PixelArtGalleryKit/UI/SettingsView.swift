@@ -25,6 +25,7 @@ public struct SettingsView: View {
     @State private var displayName: String = ""
     @State private var width: String = ""
     @State private var height: String = ""
+    @State private var layer: Int = FlaschenTaschenDisplay.defaultLayer
     @State private var errorMessage: String?
     @State private var savedConfirmation = false
 
@@ -74,6 +75,18 @@ public struct SettingsView: View {
             labeledField("Port", prompt: "1337", text: $port, numeric: true)
             labeledField("Width (pixels)", prompt: "45", text: $width, numeric: true)
             labeledField("Height (pixels)", prompt: "35", text: $height, numeric: true)
+            Stepper(value: $layer, in: FlaschenTaschenDisplay.layerRange) {
+                HStack {
+                    Text("Default Layer")
+                    Spacer()
+                    Text("\(layer)")
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .onChange(of: layer) {
+                savedConfirmation = false
+            }
         }
 
         if let errorMessage {
@@ -161,6 +174,7 @@ public struct SettingsView: View {
         displayName = display.displayName
         width = String(display.displayWidth)
         height = String(display.displayHeight)
+        layer = FlaschenTaschenDisplay.clampedLayer(display.layer)
         errorMessage = nil
         savedConfirmation = false
     }
@@ -177,6 +191,7 @@ public struct SettingsView: View {
             display.displayName = validated.displayName
             display.displayWidth = validated.width
             display.displayHeight = validated.height
+            display.layer = FlaschenTaschenDisplay.clampedLayer(layer)
             do {
                 try modelContext.save()
                 errorMessage = nil
