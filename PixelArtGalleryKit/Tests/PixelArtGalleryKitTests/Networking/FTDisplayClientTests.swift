@@ -117,6 +117,27 @@ import Foundation
         ], "Pixels must be row-major RGB triples with alpha stripped")
     }
 
+    // MARK: - Layer clear frame (#0053)
+
+    /// The layer-clear frame is all-zero RGBA pixel data. Its packet must carry
+    /// black (0,0,0) RGB for every pixel on the chosen layer — the FT server
+    /// composites black on layers 1–15 as transparent, erasing the overlay.
+    @Test func allBlackFrameProducesBlackPixelsOnChosenLayer() throws {
+        let width = 2, height = 2
+        let blackFrame = Data(count: width * height * 4) // all zero → black
+        let packet = try FTDisplayClient.makePacket(
+            width: width, height: height, pixelGridData: blackFrame, scaleFactor: 1.0,
+            offset: (0, 0, 5)
+        )
+
+        let header = expectedHeader(width: width, height: height, offset: (0, 0, 5))
+        #expect(packet.starts(with: Array(header.utf8)), "Clear frame must target the chosen layer via #FT:")
+
+        let pixels = Array(packet.dropFirst(header.utf8.count))
+        #expect(pixels.count == width * height * 3, "RGB pixel region should follow the header")
+        #expect(pixels.allSatisfy { $0 == 0 }, "Every pixel of the clear frame must be black (0,0,0)")
+    }
+
     // MARK: - Error handling
 
     @Test func mismatchedPixelDataThrows() {

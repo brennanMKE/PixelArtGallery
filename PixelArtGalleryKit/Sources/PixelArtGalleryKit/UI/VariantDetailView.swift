@@ -16,6 +16,19 @@ struct VariantDetailView: View {
     @State private var isSending = false
     /// The in-flight send, retained so the user can cancel it by tapping Stop (#0050).
     @State private var sendTask: Task<Void, Never>?
+    /// Parameters of the active send, captured at start so stopping can clear the
+    /// exact layer/endpoint that was painted — even if the picker changed mid-send (#0053).
+    @State private var activeSend: ActiveSend?
+
+    /// The endpoint + geometry + layer of an in-flight continuous send.
+    private struct ActiveSend: Sendable {
+        let host: String
+        let port: Int
+        let width: Int
+        let height: Int
+        let scaleFactor: Double
+        let layer: Int
+    }
     @State private var showExportPicker = false
     @State private var isEditingDimensions = false
     @State private var isConfirmingDelete = false
@@ -116,11 +129,11 @@ struct VariantDetailView: View {
         }
         .onDisappear {
             // Leaving the view stops a continuous send (#0052) so it doesn't keep
-            // pushing frames in the background on Mac or iPhone. Sheets presented
-            // over this view don't trigger onDisappear, so opening export/edit
-            // won't cancel a send. Cancelling is cooperative — the loop's Task
-            // ends and clears `isSending`/`sendTask` (#0050).
-            sendTask?.cancel()
+            // pushing frames in the background on Mac or iPhone, and clears the
+            // painted layer with a final black frame (#0053). Sheets presented over
+            // this view don't trigger onDisappear, so opening export/edit won't
+            // stop a send. The clear runs detached, so it survives view teardown.
+            stopSending()
         }
     }
 
@@ -252,12 +265,11 @@ struct VariantDetailView: View {
     private static let sendRefreshInterval: Duration = .seconds(2)
 
     private func handleSendToDisplay() {
-        // Tapping while sending stops the continuous send (#0050). Cancellation is
-        // cooperative: cancelling the task ends the refresh loop and the client
-        // aborts any in-flight packet.
+        // Tapping while sending stops the continuous send (#0050) and clears the
+        // layer (#0053).
         if isSending {
             AppLog.ftDiscovery.info("User requested stop of continuous send")
-            sendTask?.cancel()
+            stopSending()
             return
         }
 
@@ -276,6 +288,13 @@ struct VariantDetailView: View {
         // value, whatever state the stepper is in (#0047).
         let layer = FlaschenTaschenDisplay.clampedLayer(sendLayer)
 
+        // Capture the send parameters so stopSending() can clear this exact
+        // endpoint/layer later, independent of any later UI changes (#0053).
+        activeSend = ActiveSend(
+            host: host, port: port, width: width, height: height,
+            scaleFactor: scaleFactor, layer: layer
+        )
+
         isSending = true
         errorMessage = nil
         successMessage = nil
@@ -287,6 +306,10 @@ struct VariantDetailView: View {
             defer {
                 isSending = false
                 sendTask = nil
+                // Clear the captured params on any loop end (including a network
+                // error that wasn't a user stop) so a later onDisappear doesn't
+                // fire a spurious clear (#0053).
+                activeSend = nil
             }
             let client = FTDisplayClient()
             var frameCount = 0
@@ -318,6 +341,45 @@ struct VariantDetailView: View {
             }
             AppLog.ftDiscovery.info("Stopped continuous send to \(displayName, privacy: .public) after \(frameCount) frame(s)")
             flashInfo("Stopped sending to \(displayName)")
+        }
+    }
+
+    /// Stop the continuous send and clear the painted layer.
+    ///
+    /// Cancels the refresh loop, then sends a final all-black frame to the exact
+    /// endpoint/layer that was being painted. FlaschenTaschen treats black on any
+    /// layer above the background as transparent, so this erases the overlay
+    /// immediately instead of waiting for the server's layer timeout (#0053). The
+    /// clear runs in a detached task so it completes even as the view is torn down
+    /// (#0052) and isn't killed by the loop's cancellation.
+    private func stopSending() {
+        // Capture before cancelling — the loop's `defer` also nils this out.
+        let clearTarget = activeSend
+        sendTask?.cancel()
+        sendTask = nil
+        isSending = false
+        activeSend = nil
+
+        guard let target = clearTarget else { return }
+        Task.detached {
+            let client = FTDisplayClient()
+            // All-zero RGBA → RGB (0,0,0); on layers 1–15 the FT server composites
+            // black as transparent, erasing this layer.
+            let blackFrame = Data(count: target.width * target.height * 4)
+            // UDP is lossy; resend a few times as a best-effort erase.
+            for _ in 0..<3 {
+                try? await client.send(
+                    width: target.width,
+                    height: target.height,
+                    pixelGridData: blackFrame,
+                    scaleFactor: target.scaleFactor,
+                    to: target.host,
+                    port: target.port,
+                    offset: (x: 0, y: 0, z: target.layer)
+                )
+                try? await Task.sleep(for: .milliseconds(120))
+            }
+            AppLog.ftDiscovery.info("Cleared FT layer \(target.layer) on \(target.host, privacy: .public):\(target.port)")
         }
     }
 
