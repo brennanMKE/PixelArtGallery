@@ -369,6 +369,7 @@ final class GalleryCoordinator {
     ///   - displayName: User-friendly name
     ///   - displayWidth: Native pixel width
     ///   - displayHeight: Native pixel height
+    ///   - layer: Default paint layer (#0047); clamped to ``FlaschenTaschenDisplay/layerRange``.
     /// - Returns: The persisted display.
     @discardableResult
     func addManualDisplay(
@@ -376,7 +377,8 @@ final class GalleryCoordinator {
         port: Int,
         displayName: String,
         displayWidth: Int,
-        displayHeight: Int
+        displayHeight: Int,
+        layer: Int = FlaschenTaschenDisplay.defaultLayer
     ) throws -> FlaschenTaschenDisplay {
         guard let modelContext else {
             AppLog.ftDiscovery.error("addManualDisplay called before a ModelContext was configured")
@@ -389,7 +391,8 @@ final class GalleryCoordinator {
             displayName: displayName,
             displayWidth: displayWidth,
             displayHeight: displayHeight,
-            source: "manual"
+            source: "manual",
+            layer: layer
         )
 
         do {
@@ -461,6 +464,72 @@ final class GalleryCoordinator {
         } catch {
             currentError = error.localizedDescription
             AppLog.ftDiscovery.error("Failed to rename display \(display.id): \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// Apply a fully validated edit to a persisted Flaschen Taschen display
+    /// (#0054).
+    ///
+    /// Used by the display editor form in both add and edit mode; in edit mode
+    /// this is the only way to change a display's host/port/dimensions/name
+    /// after creation — previously only the display name could be changed, via
+    /// ``renameDisplay(_:to:)``, and everything else required delete + re-add.
+    /// - Parameters:
+    ///   - display: The display to update.
+    ///   - validated: Already-validated field values from ``ManualDisplayInput``.
+    ///   - layer: New default paint layer; clamped to ``FlaschenTaschenDisplay/layerRange``.
+    func updateDisplay(
+        _ display: FlaschenTaschenDisplay,
+        with validated: ManualDisplayInput.Validated,
+        layer: Int
+    ) throws {
+        guard let modelContext else {
+            AppLog.ftDiscovery.error("updateDisplay called before a ModelContext was configured")
+            throw GalleryCoordinatorError.missingModelContext
+        }
+
+        display.host = validated.host
+        display.port = validated.port
+        display.displayName = validated.displayName
+        display.displayWidth = validated.width
+        display.displayHeight = validated.height
+        display.layer = FlaschenTaschenDisplay.clampedLayer(layer)
+
+        do {
+            try modelContext.save()
+            AppLog.ftDiscovery.info("Updated display \(display.id): \(validated.displayName, privacy: .public) at \(validated.host, privacy: .public):\(validated.port) (\(validated.width)×\(validated.height))")
+        } catch {
+            currentError = error.localizedDescription
+            AppLog.ftDiscovery.error("Failed to update display \(display.id): \(error.localizedDescription, privacy: .public)")
+            throw error
+        }
+    }
+
+    /// Re-create the built-in default Flaschen Taschen display on demand
+    /// (#0054), regardless of whether other displays already exist.
+    ///
+    /// Unlike ``seedDefaultDisplayIfNeeded()``, which only seeds when the
+    /// registry is completely empty, this always inserts a fresh default. It
+    /// backs the "Restore Default Display" affordance shown once the seeded
+    /// default has been deleted while other displays remain.
+    /// - Returns: The newly inserted display, or `nil` if it could not be saved.
+    @discardableResult
+    func restoreDefaultDisplay() -> FlaschenTaschenDisplay? {
+        guard let modelContext else {
+            AppLog.ftDiscovery.error("restoreDefaultDisplay called before a ModelContext was configured")
+            return nil
+        }
+
+        let display = FlaschenTaschenDisplay.makeDefault()
+        modelContext.insert(display)
+        do {
+            try modelContext.save()
+            AppLog.ftDiscovery.info("Restored default display: \(display.displayName, privacy: .public)")
+            return display
+        } catch {
+            currentError = error.localizedDescription
+            AppLog.ftDiscovery.error("Failed to restore default display: \(error.localizedDescription, privacy: .public)")
+            return nil
         }
     }
 

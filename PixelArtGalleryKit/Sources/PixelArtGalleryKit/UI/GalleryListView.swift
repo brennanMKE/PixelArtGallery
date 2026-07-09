@@ -2,13 +2,6 @@ import SwiftData
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Non-model navigation destinations reachable from the gallery's nav stack.
-/// Model-backed pushes (a `GalleryItem`) use their own `navigationDestination`.
-enum GalleryRoute: Hashable {
-    /// The Flaschen Taschen display registry.
-    case displays
-}
-
 /// A freshly picked image awaiting a name before it's imported. Carries the raw
 /// bytes plus the picker's suggested name (if any) so the naming sheet can
 /// prefill the field.
@@ -127,12 +120,6 @@ public struct GalleryListView: View {
             .navigationDestination(for: GalleryItem.self) { item in
                 GalleryDetailView(item: item, coordinator: coordinator)
             }
-            .navigationDestination(for: GalleryRoute.self) { route in
-                switch route {
-                case .displays:
-                    DisplayRegistryView(coordinator: coordinator)
-                }
-            }
             .navigationTitle("Gallery")
             #if os(iOS)
             .toolbarBackground(.hidden, for: .navigationBar)
@@ -156,14 +143,11 @@ public struct GalleryListView: View {
                         Label("Sort", systemImage: "arrow.up.arrow.down")
                     }
                 }
-                ToolbarItem(placement: .secondaryAction) {
-                    NavigationLink(value: GalleryRoute.displays) {
-                        Label("Displays", systemImage: "display")
-                    }
-                }
                 #if os(iOS)
                 // macOS reaches SettingsView through the app's Settings scene
-                // (⌘,), so the gear only appears on iOS.
+                // (⌘,); iOS reaches it through this gear button. Settings is
+                // the single home for display management on both platforms
+                // (#0054) — there is no separate "Displays" destination.
                 ToolbarItem(placement: .secondaryAction) {
                     Button(action: { showSettings = true }) {
                         Label("Settings", systemImage: "gearshape")
@@ -289,19 +273,11 @@ public struct GalleryListView: View {
         }
 
         #if os(iOS)
-        // In-app Settings (default FT display). Grouped form in a sheet is fine
-        // on iOS; macOS gets the standard Settings scene instead.
+        // In-app Settings — display management (#0054). SettingsView owns its
+        // own NavigationStack and Done button; macOS gets the standard
+        // Settings scene instead.
         .sheet(isPresented: $showSettings) {
-            NavigationStack {
-                SettingsView()
-                    .navigationTitle("Settings")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button("Done") { showSettings = false }
-                        }
-                    }
-            }
+            SettingsView()
         }
         #endif
 

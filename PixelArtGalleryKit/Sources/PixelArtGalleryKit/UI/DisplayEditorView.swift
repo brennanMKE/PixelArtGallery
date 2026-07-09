@@ -1,8 +1,10 @@
 import SwiftUI
 
-/// Pure, testable validation of the raw text a user types into the manual
-/// display entry form. Holding this apart from the SwiftUI view keeps the
-/// parsing/validation rules unit-testable without standing up a view.
+/// Pure, testable validation of the raw text a user types into the display
+/// editor form. Holding this apart from the SwiftUI view keeps the
+/// parsing/validation rules unit-testable without standing up a view. Shared
+/// by both add and edit modes of ``DisplayEditorView`` and by the retired
+/// per-display Settings editor (#0054).
 nonisolated struct ManualDisplayInput: Equatable {
     var host: String
     var port: String
@@ -82,21 +84,75 @@ nonisolated struct ManualDisplayInput: Equatable {
     }
 }
 
-/// Modal form for manually adding a Flaschen Taschen display when mDNS
-/// discovery fails or isn't available. Mirrors ``VariantCreationView`` in style.
-struct ManualDisplayEntryView: View {
+/// Modal form for adding a Flaschen Taschen display by hand, or editing an
+/// existing one in place (#0054). One reusable editor backs both flows so a
+/// display is never a delete-and-recreate operation:
+///
+/// - **Add** — used when mDNS discovery fails or isn't available; fields start
+///   blank/defaulted.
+/// - **Edit** — fields are prefilled from an existing ``FlaschenTaschenDisplay``
+///   (including its default paint layer) and the confirm button reads "Save".
+///
+/// Mirrors ``VariantCreationView`` in style. Validation always goes through
+/// ``ManualDisplayInput`` regardless of mode.
+struct DisplayEditorView: View {
+    /// Which display, if any, is being edited. `add` starts from blank/default
+    /// fields; `edit` prefills from the given display and writes back to it.
+    enum Mode {
+        case add
+        case edit(FlaschenTaschenDisplay)
+
+        var title: String {
+            switch self {
+            case .add: return "Add Display"
+            case .edit: return "Edit Display"
+            }
+        }
+
+        var confirmTitle: String {
+            switch self {
+            case .add: return "Add"
+            case .edit: return "Save"
+            }
+        }
+    }
+
     @Environment(\.dismiss) private var dismiss
 
-    @State private var host: String = ""
-    @State private var port: String = "1337"
-    @State private var displayName: String = ""
-    @State private var width: String = "64"
-    @State private var height: String = "64"
+    let mode: Mode
+
+    @State private var host: String
+    @State private var port: String
+    @State private var displayName: String
+    @State private var width: String
+    @State private var height: String
+    @State private var layer: Int
     @State private var errorMessage: String?
 
-    /// Persists the validated display. Throws so persistence failures surface
-    /// to the user without dismissing.
-    var onAddDisplay: (ManualDisplayInput.Validated) throws -> Void
+    /// Persists the validated fields plus the chosen layer. Throws so
+    /// persistence failures surface to the user without dismissing.
+    var onSave: (ManualDisplayInput.Validated, Int) throws -> Void
+
+    init(mode: Mode, onSave: @escaping (ManualDisplayInput.Validated, Int) throws -> Void) {
+        self.mode = mode
+        self.onSave = onSave
+        switch mode {
+        case .add:
+            _host = State(initialValue: "")
+            _port = State(initialValue: "1337")
+            _displayName = State(initialValue: "")
+            _width = State(initialValue: "64")
+            _height = State(initialValue: "64")
+            _layer = State(initialValue: FlaschenTaschenDisplay.defaultLayer)
+        case .edit(let display):
+            _host = State(initialValue: display.host)
+            _port = State(initialValue: String(display.port))
+            _displayName = State(initialValue: display.displayName)
+            _width = State(initialValue: String(display.displayWidth))
+            _height = State(initialValue: String(display.displayHeight))
+            _layer = State(initialValue: FlaschenTaschenDisplay.clampedLayer(display.layer))
+        }
+    }
 
     private var input: ManualDisplayInput {
         ManualDisplayInput(
@@ -184,6 +240,22 @@ struct ManualDisplayEntryView: View {
                     }
                 }
 
+                Section {
+                    Stepper(value: $layer, in: FlaschenTaschenDisplay.layerRange) {
+                        HStack {
+                            Text("Default Layer")
+                            Spacer()
+                            Text("\(layer)")
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                } header: {
+                    Text("Defaults")
+                } footer: {
+                    Text("The paint layer (z-offset) used when sending to this display.")
+                }
+
                 if let errorMessage {
                     Section {
                         Text(errorMessage)
@@ -203,7 +275,7 @@ struct ManualDisplayEntryView: View {
                 }
             }
             .formStyle(.grouped)
-            .navigationTitle("Add Display")
+            .navigationTitle(mode.title)
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
@@ -215,25 +287,25 @@ struct ManualDisplayEntryView: View {
                 }
 
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Add") {
-                        addDisplay()
+                    Button(mode.confirmTitle) {
+                        save()
                     }
                     .disabled(!input.isValid)
                 }
             }
         }
         #if os(macOS)
-        .frame(minWidth: 440, minHeight: 520)
+        .frame(minWidth: 440, minHeight: 560)
         #endif
     }
 
-    private func addDisplay() {
+    private func save() {
         switch input.validate() {
         case .failure(let error):
             errorMessage = error.message
         case .success(let validated):
             do {
-                try onAddDisplay(validated)
+                try onSave(validated, layer)
                 errorMessage = nil
                 dismiss()
             } catch {
@@ -243,6 +315,6 @@ struct ManualDisplayEntryView: View {
     }
 }
 
-#Preview {
-    ManualDisplayEntryView(onAddDisplay: { _ in })
+#Preview("Add") {
+    DisplayEditorView(mode: .add, onSave: { _, _ in })
 }

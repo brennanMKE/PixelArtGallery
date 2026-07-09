@@ -88,9 +88,10 @@ struct PixelArtGalleryApp: App {
         }
         #endif
 
-        // macOS Settings scene (Pixel Art Gallery ▸ Settings…, ⌘,) editing the
-        // default Flaschen Taschen display (#0021). Needs its own
-        // `.modelContainer` — scenes don't inherit the WindowGroup's.
+        // macOS Settings scene (Pixel Art Gallery ▸ Settings…, ⌘,) hosting
+        // Flaschen Taschen display management: scan, add, edit, and delete
+        // every display (#0054). Needs its own `.modelContainer` — scenes
+        // don't inherit the WindowGroup's.
         #if os(macOS)
         Settings {
             SettingsView()

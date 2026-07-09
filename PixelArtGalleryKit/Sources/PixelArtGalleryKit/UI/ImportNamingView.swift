@@ -3,7 +3,7 @@ import SwiftUI
 /// Lightweight modal that lets the user confirm or edit the name of a freshly
 /// picked image before it's imported. Prefilled with a suggested name (the
 /// source filename where the picker provides one) and falling back to
-/// ``defaultImportedImageName``. Mirrors ``ManualDisplayEntryView`` in style.
+/// ``defaultImportedImageName``. Mirrors ``DisplayEditorView`` in style.
 struct ImportNamingView: View {
     @Environment(\.dismiss) private var dismiss
 
