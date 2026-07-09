@@ -225,21 +225,34 @@ struct VariantDetailView: View {
                 .disabled(selectedDisplay == nil)
             }
         }
-        .onChange(of: displays.map(\.id), initial: true) { _, _ in
+        .onChange(of: displays.map { "\($0.id)|\($0.displayWidth)x\($0.displayHeight)" }, initial: true) { _, _ in
             // Initialize the selection when the view appears (initial: true)
-            // and keep it valid as the registry changes: prefer the default
-            // display, else the first, but never stomp a still-valid explicit
-            // choice (#0032).
-            selectedDisplayID = FlaschenTaschenDisplay.preferredSelection(
-                current: selectedDisplayID,
-                among: displays.map { (id: $0.id, source: $0.source) }
-            )
+            // and keep it valid as the registry changes.
+            updateSelectedDisplay()
             seedSendLayer()
+        }
+        .onChange(of: variant.targetWidth) {
+            updateSelectedDisplay()
+        }
+        .onChange(of: variant.targetHeight) {
+            updateSelectedDisplay()
         }
         .onChange(of: selectedDisplayID) {
             // Reseed the layer from each newly selected display's default.
             seedSendLayer()
         }
+    }
+
+    /// Auto-select the display whose geometry matches this variant's
+    /// dimensions (#0055), falling back to the #0032 rule (keep a still-valid
+    /// current, else the default display, else the first) when none match.
+    private func updateSelectedDisplay() {
+        selectedDisplayID = FlaschenTaschenDisplay.preferredSelection(
+            current: selectedDisplayID,
+            variantWidth: variant.targetWidth,
+            variantHeight: variant.targetHeight,
+            among: displays.map { (id: $0.id, source: $0.source, width: $0.displayWidth, height: $0.displayHeight) }
+        )
     }
 
     /// Seed the send layer from the selected display's configured default,

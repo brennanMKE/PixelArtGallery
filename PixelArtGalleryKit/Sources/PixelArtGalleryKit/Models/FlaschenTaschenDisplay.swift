@@ -102,17 +102,33 @@ public final class FlaschenTaschenDisplay {
         )
     }
 
-    /// Pick which display a send picker should select (#0032).
+    /// Pick which display a send picker should select (#0032, extended for
+    /// #0055 with geometry matching).
     ///
-    /// Keeps `current` whenever it still identifies one of `candidates`
-    /// (never stomps a user's valid explicit choice); otherwise prefers the
-    /// built-in default display (`source == defaultSource`), falling back to
-    /// the first candidate, or `nil` when there are none. Operates on plain
-    /// `(id, source)` pairs so it is unit-testable without SwiftData.
+    /// First looks for candidates whose `width × height` exactly equals the
+    /// variant's `variantWidth × variantHeight`. Within that match set, keeps
+    /// `current` if it already matches (never stomps a still-valid explicit
+    /// choice), otherwise picks the first match in candidate order (the
+    /// picker's `@Query` is sorted by `displayName`, so this is deterministic).
+    /// When nothing matches the variant's dimensions, falls back to the
+    /// original #0032 rule: keep a still-valid `current`, else the built-in
+    /// default display (`source == defaultSource`), else the first candidate,
+    /// else `nil`. Operates on plain tuples so it is unit-testable without
+    /// SwiftData.
     static func preferredSelection(
         current: UUID?,
-        among candidates: [(id: UUID, source: String)]
+        variantWidth: Int,
+        variantHeight: Int,
+        among candidates: [(id: UUID, source: String, width: Int, height: Int)]
     ) -> UUID? {
+        let matches = candidates.filter { $0.width == variantWidth && $0.height == variantHeight }
+        if !matches.isEmpty {
+            if let current, matches.contains(where: { $0.id == current }) {
+                return current
+            }
+            return matches.first?.id
+        }
+
         if let current, candidates.contains(where: { $0.id == current }) {
             return current
         }
