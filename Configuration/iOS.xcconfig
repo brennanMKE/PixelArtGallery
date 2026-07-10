@@ -2,8 +2,12 @@
 ASSETCATALOG_COMPILER_APPICON_NAME[sdk=iphone*] = AppIcon-iOS
 MY_CUSTOM_BUILD_SETTING[sdk=iphone*] = IPHONE
 
-// iOS keeps the Xcode-generated Info.plist; macOS uses a file (see macOS.xcconfig, #0039).
+// iOS keeps the Xcode-generated Info.plist, merged with a small partial plist
+// (Info-iOS.plist) for array-valued keys with no INFOPLIST_KEY_* equivalent,
+// namely NSBonjourServices (#0058); macOS uses a full file instead (see
+// macOS.xcconfig, #0039).
 GENERATE_INFOPLIST_FILE[sdk=iphone*] = YES
+INFOPLIST_FILE[sdk=iphone*] = Configuration/Info-iOS.plist
 
 INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphone*] = YES
 INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphone*] = YES
