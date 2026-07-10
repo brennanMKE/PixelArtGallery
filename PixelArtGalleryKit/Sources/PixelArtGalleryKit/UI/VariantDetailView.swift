@@ -13,14 +13,19 @@ struct VariantDetailView: View {
 
     @State private var selectedDisplayID: UUID?
     @State private var sendLayer: Int = FlaschenTaschenDisplay.defaultLayer
+    /// Paint offsets for the current send, seeded from the selected display's
+    /// stored defaults (#0056).
+    @State private var sendOffsetX: Int = 0
+    @State private var sendOffsetY: Int = 0
     @State private var isSending = false
     /// The in-flight send, retained so the user can cancel it by tapping Stop (#0050).
     @State private var sendTask: Task<Void, Never>?
     /// Parameters of the active send, captured at start so stopping can clear the
-    /// exact layer/endpoint that was painted — even if the picker changed mid-send (#0053).
+    /// exact layer/offset/endpoint that was painted — even if the picker or
+    /// offset fields changed mid-send (#0053, extended for x/y offsets in #0056).
     @State private var activeSend: ActiveSend?
 
-    /// The endpoint + geometry + layer of an in-flight continuous send.
+    /// The endpoint + geometry + layer + offset of an in-flight continuous send.
     private struct ActiveSend: Sendable {
         let host: String
         let port: Int
@@ -28,6 +33,8 @@ struct VariantDetailView: View {
         let height: Int
         let scaleFactor: Double
         let layer: Int
+        let offsetX: Int
+        let offsetY: Int
     }
     @State private var showExportPicker = false
     @State private var isEditingDimensions = false
@@ -210,6 +217,28 @@ struct VariantDetailView: View {
                 }
                 .disabled(isSending || selectedDisplay == nil)
 
+                Stepper(value: $sendOffsetX, in: offsetXRange) {
+                    HStack {
+                        Text("X Offset")
+                        Spacer()
+                        Text("\(sendOffsetX)")
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .disabled(isSending || selectedDisplay == nil)
+
+                Stepper(value: $sendOffsetY, in: offsetYRange) {
+                    HStack {
+                        Text("Y Offset")
+                        Spacer()
+                        Text("\(sendOffsetY)")
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .disabled(isSending || selectedDisplay == nil)
+
                 // Stays tappable while sending so the user can stop an in-flight
                 // (or stuck) send by tapping again (#0050).
                 Button(action: handleSendToDisplay) {
@@ -229,7 +258,7 @@ struct VariantDetailView: View {
             // Initialize the selection when the view appears (initial: true)
             // and keep it valid as the registry changes.
             updateSelectedDisplay()
-            seedSendLayer()
+            seedSendDefaults()
         }
         .onChange(of: variant.targetWidth) {
             updateSelectedDisplay()
@@ -238,9 +267,23 @@ struct VariantDetailView: View {
             updateSelectedDisplay()
         }
         .onChange(of: selectedDisplayID) {
-            // Reseed the layer from each newly selected display's default.
-            seedSendLayer()
+            // Reseed layer + offsets from each newly selected display's defaults.
+            seedSendDefaults()
         }
+    }
+
+    /// Valid range for the X offset stepper: `0` up to the selected display's
+    /// width (exclusive of the last column so the offset can't push the whole
+    /// frame off-display). Collapses to `0...0` with no display selected.
+    private var offsetXRange: ClosedRange<Int> {
+        guard let display = selectedDisplay, display.displayWidth > 1 else { return 0...0 }
+        return 0...(display.displayWidth - 1)
+    }
+
+    /// Valid range for the Y offset stepper, mirroring ``offsetXRange``.
+    private var offsetYRange: ClosedRange<Int> {
+        guard let display = selectedDisplay, display.displayHeight > 1 else { return 0...0 }
+        return 0...(display.displayHeight - 1)
     }
 
     /// Auto-select the display whose geometry matches this variant's
@@ -255,11 +298,17 @@ struct VariantDetailView: View {
         )
     }
 
-    /// Seed the send layer from the selected display's configured default,
-    /// clamped into the valid 1…15 range (#0047).
-    private func seedSendLayer() {
+    /// Seed the send layer and x/y offsets from the selected display's
+    /// configured defaults (#0047, extended for offsets in #0056). Layer is
+    /// clamped into the valid 1…15 range; offsets are clamped non-negative and
+    /// further bounded to this display's stepper range so a stored default
+    /// that exceeds the display's current geometry doesn't leave the stepper
+    /// showing an out-of-range value.
+    private func seedSendDefaults() {
         guard let display = selectedDisplay else { return }
         sendLayer = FlaschenTaschenDisplay.clampedLayer(display.layer)
+        sendOffsetX = min(FlaschenTaschenDisplay.clampedOffset(display.offsetX), offsetXRange.upperBound)
+        sendOffsetY = min(FlaschenTaschenDisplay.clampedOffset(display.offsetY), offsetYRange.upperBound)
     }
 
     // MARK: - Actions
@@ -297,15 +346,18 @@ struct VariantDetailView: View {
         let height = variant.targetHeight
         let pixelGridData = variant.pixelGridData
         let scaleFactor = variant.scaleFactor
-        // Clamp defensively so the send never carries layer 0 or an out-of-range
-        // value, whatever state the stepper is in (#0047).
+        // Clamp defensively so the send never carries layer 0, an out-of-range
+        // layer, or a negative offset, whatever state the controls are in
+        // (#0047, extended for offsets in #0056).
         let layer = FlaschenTaschenDisplay.clampedLayer(sendLayer)
+        let offsetX = FlaschenTaschenDisplay.clampedOffset(sendOffsetX)
+        let offsetY = FlaschenTaschenDisplay.clampedOffset(sendOffsetY)
 
         // Capture the send parameters so stopSending() can clear this exact
-        // endpoint/layer later, independent of any later UI changes (#0053).
+        // endpoint/layer/offset later, independent of any later UI changes (#0053, #0056).
         activeSend = ActiveSend(
             host: host, port: port, width: width, height: height,
-            scaleFactor: scaleFactor, layer: layer
+            scaleFactor: scaleFactor, layer: layer, offsetX: offsetX, offsetY: offsetY
         )
 
         isSending = true
@@ -336,7 +388,7 @@ struct VariantDetailView: View {
                         scaleFactor: scaleFactor,
                         to: host,
                         port: port,
-                        offset: (x: 0, y: 0, z: layer)
+                        offset: (x: offsetX, y: offsetY, z: layer)
                     )
                     frameCount += 1
                     // Sleeping is a cancellation point, so Stop ends the loop promptly.
@@ -388,7 +440,7 @@ struct VariantDetailView: View {
                     scaleFactor: target.scaleFactor,
                     to: target.host,
                     port: target.port,
-                    offset: (x: 0, y: 0, z: target.layer)
+                    offset: (x: target.offsetX, y: target.offsetY, z: target.layer)
                 )
                 try? await Task.sleep(for: .milliseconds(120))
             }

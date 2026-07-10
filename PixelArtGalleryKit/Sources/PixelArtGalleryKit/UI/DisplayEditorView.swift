@@ -11,6 +11,10 @@ nonisolated struct ManualDisplayInput: Equatable {
     var displayName: String
     var width: String
     var height: String
+    /// Default horizontal paint offset (FT x-offset), as raw text (#0056).
+    var offsetX: String = "0"
+    /// Default vertical paint offset (FT y-offset), as raw text (#0056).
+    var offsetY: String = "0"
 
     /// A fully validated set of values ready to persist.
     struct Validated: Equatable {
@@ -19,6 +23,8 @@ nonisolated struct ManualDisplayInput: Equatable {
         var displayName: String
         var width: Int
         var height: Int
+        var offsetX: Int = 0
+        var offsetY: Int = 0
     }
 
     /// Reasons the input cannot be turned into a display, in priority order.
@@ -27,6 +33,8 @@ nonisolated struct ManualDisplayInput: Equatable {
         case invalidPort
         case invalidWidth
         case invalidHeight
+        case invalidOffsetX
+        case invalidOffsetY
 
         var message: String {
             switch self {
@@ -34,6 +42,8 @@ nonisolated struct ManualDisplayInput: Equatable {
             case .invalidPort: return "Port must be a number between 1 and 65535."
             case .invalidWidth: return "Width must be a positive number."
             case .invalidHeight: return "Height must be a positive number."
+            case .invalidOffsetX: return "X offset must be zero or a positive number."
+            case .invalidOffsetY: return "Y offset must be zero or a positive number."
             }
         }
     }
@@ -44,6 +54,7 @@ nonisolated struct ManualDisplayInput: Equatable {
     /// - `host` must be non-empty once trimmed.
     /// - `port` must parse to an integer in 1...65535.
     /// - `width`/`height` must parse to positive integers.
+    /// - `offsetX`/`offsetY` must parse to integers ≥ 0 (#0056).
     /// - `displayName` is trimmed; if empty it falls back to the host so a
     ///   display always has a usable label.
     func validate() -> Result<Validated, ValidationError> {
@@ -63,6 +74,14 @@ nonisolated struct ManualDisplayInput: Equatable {
             return .failure(ValidationError.invalidHeight)
         }
 
+        guard let offsetXValue = Int(offsetX.trimmingCharacters(in: .whitespacesAndNewlines)), offsetXValue >= 0 else {
+            return .failure(ValidationError.invalidOffsetX)
+        }
+
+        guard let offsetYValue = Int(offsetY.trimmingCharacters(in: .whitespacesAndNewlines)), offsetYValue >= 0 else {
+            return .failure(ValidationError.invalidOffsetY)
+        }
+
         let trimmedName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
         let name = trimmedName.isEmpty ? trimmedHost : trimmedName
 
@@ -72,7 +91,9 @@ nonisolated struct ManualDisplayInput: Equatable {
                 port: portValue,
                 displayName: name,
                 width: widthValue,
-                height: heightValue
+                height: heightValue,
+                offsetX: offsetXValue,
+                offsetY: offsetYValue
             )
         )
     }
@@ -127,10 +148,13 @@ struct DisplayEditorView: View {
     @State private var width: String
     @State private var height: String
     @State private var layer: Int
+    @State private var offsetX: String
+    @State private var offsetY: String
     @State private var errorMessage: String?
 
-    /// Persists the validated fields plus the chosen layer. Throws so
-    /// persistence failures surface to the user without dismissing.
+    /// Persists the validated fields (including default x/y offsets, #0056)
+    /// plus the chosen layer. Throws so persistence failures surface to the
+    /// user without dismissing.
     var onSave: (ManualDisplayInput.Validated, Int) throws -> Void
 
     init(mode: Mode, onSave: @escaping (ManualDisplayInput.Validated, Int) throws -> Void) {
@@ -144,6 +168,8 @@ struct DisplayEditorView: View {
             _width = State(initialValue: "64")
             _height = State(initialValue: "64")
             _layer = State(initialValue: FlaschenTaschenDisplay.defaultLayer)
+            _offsetX = State(initialValue: "0")
+            _offsetY = State(initialValue: "0")
         case .edit(let display):
             _host = State(initialValue: display.host)
             _port = State(initialValue: String(display.port))
@@ -151,6 +177,8 @@ struct DisplayEditorView: View {
             _width = State(initialValue: String(display.displayWidth))
             _height = State(initialValue: String(display.displayHeight))
             _layer = State(initialValue: FlaschenTaschenDisplay.clampedLayer(display.layer))
+            _offsetX = State(initialValue: String(FlaschenTaschenDisplay.clampedOffset(display.offsetX)))
+            _offsetY = State(initialValue: String(FlaschenTaschenDisplay.clampedOffset(display.offsetY)))
         }
     }
 
@@ -160,7 +188,9 @@ struct DisplayEditorView: View {
             port: port,
             displayName: displayName,
             width: width,
-            height: height
+            height: height,
+            offsetX: offsetX,
+            offsetY: offsetY
         )
     }
 
@@ -250,10 +280,38 @@ struct DisplayEditorView: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
+
+                    HStack {
+                        Text("Default X Offset")
+                        Spacer()
+                        TextField("0", text: $offsetX, prompt: Text("0"))
+                            .textFieldStyle(.roundedBorder)
+                            #if os(macOS)
+                            .labelsHidden()
+                            #endif
+                            #if os(iOS)
+                            .keyboardType(.numberPad)
+                            #endif
+                            .frame(width: 100)
+                    }
+
+                    HStack {
+                        Text("Default Y Offset")
+                        Spacer()
+                        TextField("0", text: $offsetY, prompt: Text("0"))
+                            .textFieldStyle(.roundedBorder)
+                            #if os(macOS)
+                            .labelsHidden()
+                            #endif
+                            #if os(iOS)
+                            .keyboardType(.numberPad)
+                            #endif
+                            .frame(width: 100)
+                    }
                 } header: {
                     Text("Defaults")
                 } footer: {
-                    Text("The paint layer (z-offset) used when sending to this display.")
+                    Text("The paint layer (z-offset) and x/y offset used when sending to this display.")
                 }
 
                 if let errorMessage {

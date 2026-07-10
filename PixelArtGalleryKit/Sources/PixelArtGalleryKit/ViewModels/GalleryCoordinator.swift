@@ -370,6 +370,8 @@ final class GalleryCoordinator {
     ///   - displayWidth: Native pixel width
     ///   - displayHeight: Native pixel height
     ///   - layer: Default paint layer (#0047); clamped to ``FlaschenTaschenDisplay/layerRange``.
+    ///   - offsetX: Default horizontal paint offset (#0056); clamped to non-negative.
+    ///   - offsetY: Default vertical paint offset (#0056); clamped to non-negative.
     /// - Returns: The persisted display.
     @discardableResult
     func addManualDisplay(
@@ -378,7 +380,9 @@ final class GalleryCoordinator {
         displayName: String,
         displayWidth: Int,
         displayHeight: Int,
-        layer: Int = FlaschenTaschenDisplay.defaultLayer
+        layer: Int = FlaschenTaschenDisplay.defaultLayer,
+        offsetX: Int = 0,
+        offsetY: Int = 0
     ) throws -> FlaschenTaschenDisplay {
         guard let modelContext else {
             AppLog.ftDiscovery.error("addManualDisplay called before a ModelContext was configured")
@@ -392,7 +396,9 @@ final class GalleryCoordinator {
             displayWidth: displayWidth,
             displayHeight: displayHeight,
             source: "manual",
-            layer: layer
+            layer: layer,
+            offsetX: offsetX,
+            offsetY: offsetY
         )
 
         do {
@@ -494,6 +500,8 @@ final class GalleryCoordinator {
         display.displayWidth = validated.width
         display.displayHeight = validated.height
         display.layer = FlaschenTaschenDisplay.clampedLayer(layer)
+        display.offsetX = FlaschenTaschenDisplay.clampedOffset(validated.offsetX)
+        display.offsetY = FlaschenTaschenDisplay.clampedOffset(validated.offsetY)
 
         do {
             try modelContext.save()

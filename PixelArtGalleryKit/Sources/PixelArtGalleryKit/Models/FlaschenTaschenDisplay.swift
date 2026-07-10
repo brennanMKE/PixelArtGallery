@@ -41,6 +41,18 @@ public final class FlaschenTaschenDisplay {
     /// ``defaultLayer``).
     var layer: Int = FlaschenTaschenDisplay.defaultLayer
 
+    /// Default horizontal paint offset (FT x-offset) used when sending to this
+    /// display (#0056). Moves the painted image away from the display's
+    /// leading edge — useful when a variant is smaller than the display's
+    /// geometry. Has an inline default so SwiftData can lightweight-migrate
+    /// existing stores: records created before this property gain `0`, i.e.
+    /// today's un-offset behavior.
+    var offsetX: Int = 0
+
+    /// Default vertical paint offset (FT y-offset) used when sending to this
+    /// display (#0056). Same migration-safe default as ``offsetX``.
+    var offsetY: Int = 0
+
     /// Initialize a new FT display entry
     /// - Parameters:
     ///   - host: Hostname or IP address
@@ -50,6 +62,9 @@ public final class FlaschenTaschenDisplay {
     ///   - displayHeight: Display height in pixels
     ///   - discoveredDate: Timestamp of discovery/creation (defaults to now)
     ///   - source: "mdns", "manual", or "default"
+    ///   - layer: Default paint layer; clamped to ``layerRange``.
+    ///   - offsetX: Default horizontal paint offset; clamped to non-negative.
+    ///   - offsetY: Default vertical paint offset; clamped to non-negative.
     init(
         host: String,
         port: Int,
@@ -58,7 +73,9 @@ public final class FlaschenTaschenDisplay {
         displayHeight: Int,
         discoveredDate: Date = Date(),
         source: String = "manual",
-        layer: Int = FlaschenTaschenDisplay.defaultLayer
+        layer: Int = FlaschenTaschenDisplay.defaultLayer,
+        offsetX: Int = 0,
+        offsetY: Int = 0
     ) {
         self.id = UUID()
         self.host = host
@@ -69,6 +86,8 @@ public final class FlaschenTaschenDisplay {
         self.discoveredDate = discoveredDate
         self.source = source
         self.layer = Self.clampedLayer(layer)
+        self.offsetX = Self.clampedOffset(offsetX)
+        self.offsetY = Self.clampedOffset(offsetY)
     }
 
     /// The `source` value used for the built-in seeded default display (#0021).
@@ -85,6 +104,14 @@ public final class FlaschenTaschenDisplay {
     /// never be 0 or out of bounds, whatever the source (older store, bad input).
     static func clampedLayer(_ value: Int) -> Int {
         min(max(value, layerRange.lowerBound), layerRange.upperBound)
+    }
+
+    /// Clamp an arbitrary integer paint offset (FT x or y) to non-negative,
+    /// whatever the source (older store predating #0056, bad input). The FT
+    /// protocol places `0,0` at the display's origin; negative offsets have no
+    /// meaningful position on the display.
+    static func clampedOffset(_ value: Int) -> Int {
+        max(value, 0)
     }
 
     /// Build the built-in default Flaschen Taschen display: the standard FT

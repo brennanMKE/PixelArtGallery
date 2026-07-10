@@ -103,7 +103,9 @@ struct DisplayRegistryView: View {
                     displayName: validated.displayName,
                     displayWidth: validated.width,
                     displayHeight: validated.height,
-                    layer: layer
+                    layer: layer,
+                    offsetX: validated.offsetX,
+                    offsetY: validated.offsetY
                 )
             }
         }

@@ -7,9 +7,14 @@ import Testing
         port: String = "1337",
         displayName: String = "Office Wall",
         width: String = "64",
-        height: String = "32"
+        height: String = "32",
+        offsetX: String = "0",
+        offsetY: String = "0"
     ) -> ManualDisplayInput {
-        ManualDisplayInput(host: host, port: port, displayName: displayName, width: width, height: height)
+        ManualDisplayInput(
+            host: host, port: port, displayName: displayName, width: width, height: height,
+            offsetX: offsetX, offsetY: offsetY
+        )
     }
 
     @Test func validInputProducesValidatedValues() throws {
@@ -23,7 +28,37 @@ import Testing
         #expect(validated.displayName == "Office Wall")
         #expect(validated.width == 64)
         #expect(validated.height == 32)
+        #expect(validated.offsetX == 0)
+        #expect(validated.offsetY == 0)
         #expect(makeInput().isValid)
+    }
+
+    // MARK: - Offset validation (#0056)
+
+    @Test func offsetParsing() {
+        #expect(makeInput(offsetX: "-1").validate() == .failure(.invalidOffsetX))
+        #expect(makeInput(offsetX: "x").validate() == .failure(.invalidOffsetX))
+        #expect(makeInput(offsetX: "").validate() == .failure(.invalidOffsetX))
+        #expect(makeInput(offsetY: "-1").validate() == .failure(.invalidOffsetY))
+        #expect(makeInput(offsetY: "x").validate() == .failure(.invalidOffsetY))
+        #expect(makeInput(offsetY: "").validate() == .failure(.invalidOffsetY))
+
+        // Zero is a valid (default) offset.
+        if case .failure = makeInput(offsetX: "0", offsetY: "0").validate() {
+            Issue.record("zero offsets should be valid")
+        }
+
+        guard case .success(let validated) = makeInput(offsetX: " 10 ", offsetY: "20").validate() else {
+            Issue.record("expected success for valid positive offsets")
+            return
+        }
+        #expect(validated.offsetX == 10)
+        #expect(validated.offsetY == 20)
+    }
+
+    @Test func validationPriorityDimensionsBeforeOffsets() {
+        // Width/height checks run before offset checks.
+        #expect(makeInput(width: "0", offsetX: "-1").validate() == .failure(.invalidWidth))
     }
 
     @Test func hostIsTrimmedAndEmptyHostFails() {

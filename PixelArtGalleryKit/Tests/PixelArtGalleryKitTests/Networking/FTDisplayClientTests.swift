@@ -78,6 +78,31 @@ import Foundation
         #expect(!packet.contains(0x00), "A 0x00 byte makes the FT server ignore the offset/layer")
     }
 
+    // MARK: - Offset from display defaults (#0056)
+
+    /// A display's stored `offsetX`/`offsetY`/`layer` defaults must flow
+    /// unchanged into the packet's `#FT:` comment, the same way the
+    /// hand-picked offsets above do. This exercises the shape the send UI
+    /// actually uses: values sourced from a ``FlaschenTaschenDisplay`` rather
+    /// than typed in a test literal.
+    @Test @MainActor func packetOffsetMatchesDisplayDefaults() throws {
+        let display = FlaschenTaschenDisplay(
+            host: "ft.local", port: 1337, displayName: "Office Wall",
+            displayWidth: 64, displayHeight: 32,
+            layer: 9, offsetX: 12, offsetY: 4
+        )
+
+        let data = rgbaData([(1, 2, 3, 255)]) // 1x1
+        let packet = try FTDisplayClient.makePacket(
+            width: 1, height: 1, pixelGridData: data, scaleFactor: 1.0,
+            offset: (display.offsetX, display.offsetY, display.layer)
+        )
+
+        let header = expectedHeader(width: 1, height: 1, offset: (12, 4, 9))
+        #expect(packet.starts(with: Array(header.utf8)),
+                "The packet must carry the display's stored offset/layer defaults verbatim")
+    }
+
     // MARK: - Byte count
 
     @Test func packetByteCountMatchesHeaderPlusRGB() throws {
