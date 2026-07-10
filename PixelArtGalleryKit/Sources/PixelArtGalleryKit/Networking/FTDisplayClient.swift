@@ -165,6 +165,35 @@ public actor FTDisplayClient {
         if Task.isCancelled { throw FTDisplayError.cancelled }
     }
 
+    // MARK: - Clearing
+
+    /// Best-effort clear of a previously painted layer/offset: sends an
+    /// all-zero (black) frame to `target` a few times, since UDP is lossy and
+    /// there is no acknowledgement. FlaschenTaschen composites black on any
+    /// layer above the background as transparent, so this erases the overlay
+    /// immediately instead of waiting for the server's layer timeout (#0053).
+    ///
+    /// Shared by the continuous-send loop's stop-clear and its mid-send
+    /// clear of a layer/offset the user has just switched away from (#0057);
+    /// both need to erase exactly what was painted, not what is about to be.
+    /// Failures are swallowed — this is a best-effort erase, not something the
+    /// caller can retry differently.
+    public func sendClearFrame(to target: FTPaintTarget) async {
+        let blackFrame = Data(count: target.width * target.height * 4)
+        for _ in 0..<3 {
+            try? await send(
+                width: target.width,
+                height: target.height,
+                pixelGridData: blackFrame,
+                scaleFactor: target.scaleFactor,
+                to: target.host,
+                port: target.port,
+                offset: (x: target.offsetX, y: target.offsetY, z: target.layer)
+            )
+            try? await Task.sleep(for: .milliseconds(120))
+        }
+    }
+
     // MARK: - Packet construction
 
     /// Build the full FT datagram: a P6 PPM payload carrying the paint offset and
