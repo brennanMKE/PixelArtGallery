@@ -6,7 +6,7 @@
 	<string>Finds Flaschen Taschen displays on your local network so you can send pixel art to them.</string>
 	<key>NSBonjourServices</key>
 	<array>
-		<string>_flaschen-taschen._tcp</string>
+		<string>_flaschen-taschen._udp</string>
 	</array>
 </dict>
 </plist>

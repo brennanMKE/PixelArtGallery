@@ -20,7 +20,7 @@ enum FTDiscoveryError: LocalizedError, Equatable {
 
 /// On-demand mDNS/Bonjour discovery for Flaschen Taschen displays.
 ///
-/// Browses the local network for the `_flaschen-taschen._tcp` service type using
+/// Browses the local network for the `_flaschen-taschen._udp` service type using
 /// `Network.framework`'s `NWBrowser`, resolves each found endpoint to host/port,
 /// reads any advertised TXT metadata (display width/height), and yields plain
 /// ``DiscoveredFTDisplay`` values via an `AsyncStream`.
@@ -40,7 +40,7 @@ enum FTDiscoveryError: LocalizedError, Equatable {
 /// ```
 actor FTDiscoveryService {
     /// The default Bonjour service type advertised by Flaschen Taschen displays.
-    static let defaultServiceType = "_flaschen-taschen._tcp"
+    static let defaultServiceType = "_flaschen-taschen._udp"
 
     private let serviceType: String
     private var browser: NWBrowser?

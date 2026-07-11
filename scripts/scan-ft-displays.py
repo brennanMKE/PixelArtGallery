@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Scan the local network for FlaschenTaschen (FT) displays advertised over mDNS/Bonjour.
 
-The iOS/macOS app browses for the Bonjour service type `_flaschen-taschen._tcp`. If a
+The iOS/macOS app browses for the Bonjour service type `_flaschen-taschen._udp`. If a
 scan finds nothing, the useful question is: *what are the displays actually advertising?*
 So this tool has two modes:
 
@@ -10,7 +10,7 @@ So this tool has two modes:
   * --all          — enumerate EVERY service type advertised on the LAN and list the
                      instances under each. Use this to discover the real service type
                      your ESP32 / Mac app / Apple TV app publish, in case it isn't
-                     `_flaschen-taschen._tcp`.
+                     `_flaschen-taschen._udp`.
 
   * --probe HOST[:PORT]
                    — independent of mDNS, send a tiny FlaschenTaschen UDP frame to a
@@ -24,7 +24,7 @@ Backends, tried in order:
      is absent and you're on macOS.
 
 Examples:
-  ./scan-ft-displays.py                       # browse _flaschen-taschen._tcp for 5s
+  ./scan-ft-displays.py                       # browse _flaschen-taschen._udp for 5s
   ./scan-ft-displays.py --all                 # list every mDNS service type on the LAN
   ./scan-ft-displays.py -t 10                 # browse for 10s
   ./scan-ft-displays.py --probe 192.168.4.99  # poke a known FT server on UDP 1337
@@ -39,7 +39,7 @@ import subprocess
 import sys
 import time
 
-FT_SERVICE_TYPE = "_flaschen-taschen._tcp"
+FT_SERVICE_TYPE = "_flaschen-taschen._udp"
 FT_DEFAULT_PORT = 1337
 
 
