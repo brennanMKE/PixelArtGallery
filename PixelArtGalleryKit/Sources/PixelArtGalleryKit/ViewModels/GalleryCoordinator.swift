@@ -214,12 +214,14 @@ final class GalleryCoordinator {
     ///     When the user picks a discovered display to prefill the dimensions
     ///     (PRD Option A), its `id` is recorded so the variant remembers which
     ///     display it was made for.
+    /// - Returns: The newly created and persisted ``Variant``.
+    @discardableResult
     func createVariant(
         for item: GalleryItem,
         width: Int,
         height: Int,
         associatedDisplayId: UUID? = nil
-    ) async throws {
+    ) async throws -> Variant {
         guard let modelContext else {
             AppLog.variant.error("createVariant called before a ModelContext was configured")
             throw GalleryCoordinatorError.missingModelContext
@@ -257,9 +259,105 @@ final class GalleryCoordinator {
             try modelContext.save()
 
             AppLog.variant.info("Created variant for \(item.originalName, privacy: .public): \(width)×\(height)")
+            return variant
         } catch {
             currentError = error.localizedDescription
             AppLog.variant.error("Failed to create variant for '\(item.originalName, privacy: .public)': \(error.localizedDescription, privacy: .public)")
+            throw error
+        }
+    }
+
+    /// Create (or reuse) a variant fitted to a Flaschen Taschen display's
+    /// dimensions, aspect-preserving, for the display-first flow (#0061/#0063).
+    ///
+    /// Computes the largest same-aspect-ratio size of the item's original
+    /// image that fits inside `display`'s geometry via ``AspectFit/fit(sourceWidth:sourceHeight:displayWidth:displayHeight:)``,
+    /// then either reuses an existing variant already sized to that fit (see
+    /// dedup below) or creates a new one through ``createVariant(for:width:height:associatedDisplayId:)``.
+    ///
+    /// **Dedup key**: `associatedDisplayId == display.id && targetWidth ==
+    /// fitWidth && targetHeight == fitHeight`. Display id alone is not enough —
+    /// a display's geometry can change in place (mDNS re-scan, manual edit),
+    /// so an older variant tagged with the same display at different (e.g.
+    /// raw, un-fitted) dimensions must not be mistaken for a fitted match. When
+    /// several matches exist (shouldn't normally happen), the most recently
+    /// created one is returned, for determinism. Re-selecting the same display
+    /// is intentionally a no-op — it never re-runs the engine or touches
+    /// existing pixel data, since that would silently discard any edits the
+    /// user made to the grid. Explicit regeneration already exists via
+    /// ``updateVariantDimensions(_:width:height:)``.
+    ///
+    /// Pixelating at the fit dimensions via the existing ``createVariant(for:width:height:associatedDisplayId:)``
+    /// (which calls `PixelationEngine.process`) is aspect-preserving by
+    /// construction — the fit width/height already match the source's aspect
+    /// ratio, so a plain resize is distortion-free. `PixelationEngine.processFitting`
+    /// is not needed here: the fit dimensions must be known up front (before
+    /// pixelation) to perform the dedup check.
+    /// - Parameters:
+    ///   - item: The gallery item to fit and pixelate.
+    ///   - display: The Flaschen Taschen display whose geometry the source
+    ///     should be fit into.
+    /// - Returns: The fitted ``Variant``, either newly created or an existing
+    ///   match reused as-is.
+    @discardableResult
+    func createFittedVariant(
+        for item: GalleryItem,
+        display: FlaschenTaschenDisplay
+    ) async throws -> Variant {
+        guard let modelContext else {
+            AppLog.variant.error("createFittedVariant called before a ModelContext was configured")
+            throw GalleryCoordinatorError.missingModelContext
+        }
+
+        do {
+            // Determine source dimensions without decoding when possible.
+            // Import sets originalWidth/Height to 0 when decode failed at
+            // import time (see createGalleryItem), so fall back to decoding
+            // the stored original bytes in that degenerate case.
+            var sourceWidth = item.originalWidth
+            var sourceHeight = item.originalHeight
+            if sourceWidth <= 0 || sourceHeight <= 0 {
+                let storage = try fileStorageManager()
+                guard let imageData = try await storage.load(filename: item.originalImagePath),
+                      let cgImage = try? loadImage(from: imageData) else {
+                    throw GalleryCoordinatorError.originalImageMissing(item.originalImagePath)
+                }
+                sourceWidth = cgImage.width
+                sourceHeight = cgImage.height
+            }
+
+            let fit = AspectFit.fit(
+                sourceWidth: sourceWidth, sourceHeight: sourceHeight,
+                displayWidth: display.displayWidth, displayHeight: display.displayHeight
+            )
+
+            // Dedup before any pixelation I/O: reuse an existing fitted variant
+            // for this exact display + fit-dimension pairing rather than
+            // creating a duplicate.
+            let existingMatches = item.variants.filter {
+                $0.associatedDisplayId == display.id
+                    && $0.targetWidth == fit.width
+                    && $0.targetHeight == fit.height
+            }
+            if let reuse = existingMatches.max(by: { $0.createdDate < $1.createdDate }) {
+                AppLog.variant.info(
+                    "Reusing fitted variant \(reuse.id) for '\(item.originalName, privacy: .public)' at \(fit.width)×\(fit.height) for display \(display.id)"
+                )
+                return reuse
+            }
+
+            AppLog.variant.info(
+                "Creating fitted variant for '\(item.originalName, privacy: .public)' at \(fit.width)×\(fit.height) for display \(display.id)"
+            )
+            return try await createVariant(
+                for: item,
+                width: fit.width,
+                height: fit.height,
+                associatedDisplayId: display.id
+            )
+        } catch {
+            currentError = error.localizedDescription
+            AppLog.variant.error("Failed to create fitted variant for '\(item.originalName, privacy: .public)': \(error.localizedDescription, privacy: .public)")
             throw error
         }
     }
