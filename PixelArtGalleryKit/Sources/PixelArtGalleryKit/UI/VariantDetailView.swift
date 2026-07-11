@@ -13,9 +13,12 @@ struct VariantDetailView: View {
 
     /// The display a display-first push (#0064) wants the send offset
     /// centered on, or `nil` for the ordinary variant-list entry point. Set
-    /// once at init and consumed (cleared) the first time `seedSendDefaults()`
-    /// applies the centered offset for this display, so it never re-fires on
-    /// a later reseed (e.g. the user switching displays).
+    /// once at init; stays set (and reapplies the centered offset on every
+    /// reseed) for as long as `selectedDisplayID` keeps matching it, and is
+    /// cleared for good the moment the selection moves to a *different*
+    /// display — see ``SendDefaultsSeed`` for why "stays set until the
+    /// selection diverges" (rather than "cleared on first use") is what makes
+    /// this survive SwiftUI's redundant first-appearance reseed.
     @State private var pendingCenteredDisplayID: UUID?
 
     @State private var selectedDisplayID: UUID?
@@ -347,27 +350,39 @@ struct VariantDetailView: View {
     /// Exception (#0064): when this seed matches the pending display-first
     /// push's display, the x/y offsets are instead seeded to the aspect-fit
     /// centering offset for this variant on that display — not the display's
-    /// stored defaults — and the pending state is consumed (cleared) so it
-    /// never fires again for a later reseed (e.g. the user switching displays
-    /// and back). The layer still seeds from the display's stored default in
-    /// both cases.
+    /// stored defaults. The layer still seeds from the display's stored
+    /// default in both cases.
+    ///
+    /// The actual decision is delegated to ``SendDefaultsSeed/seed(_:)``, a
+    /// pure function, so it can be unit-tested directly. This view is called
+    /// (redundantly, by design) both right after `updateSelectedDisplay()`
+    /// changes `selectedDisplayID` and again from the separate
+    /// `onChange(of: selectedDisplayID)` reacting to that same change —
+    /// `SendDefaultsSeed.seed(_:)` is idempotent under that repetition (see
+    /// its doc comment for why a naive "clear pending on first use" approach
+    /// let the second call clobber the centered seed with stored defaults,
+    /// the #0064 review bounce).
     private func seedSendDefaults() {
         guard let display = selectedDisplay else { return }
-        sendLayer = FlaschenTaschenDisplay.clampedLayer(display.layer)
 
-        if let pendingCenteredDisplayID, pendingCenteredDisplayID == selectedDisplayID {
-            let centered = AspectFit.centeringOffset(
-                imageWidth: variant.targetWidth, imageHeight: variant.targetHeight,
-                displayWidth: display.displayWidth, displayHeight: display.displayHeight
+        let output = SendDefaultsSeed.seed(
+            SendDefaultsSeed.Input(
+                pendingCenteredDisplayID: pendingCenteredDisplayID,
+                selectedDisplayID: selectedDisplayID,
+                variantWidth: variant.targetWidth,
+                variantHeight: variant.targetHeight,
+                displayWidth: display.displayWidth,
+                displayHeight: display.displayHeight,
+                displayLayer: display.layer,
+                displayOffsetX: display.offsetX,
+                displayOffsetY: display.offsetY
             )
-            sendOffsetX = min(centered.x, offsetXRange.upperBound)
-            sendOffsetY = min(centered.y, offsetYRange.upperBound)
-            self.pendingCenteredDisplayID = nil
-            return
-        }
+        )
 
-        sendOffsetX = min(FlaschenTaschenDisplay.clampedOffset(display.offsetX), offsetXRange.upperBound)
-        sendOffsetY = min(FlaschenTaschenDisplay.clampedOffset(display.offsetY), offsetYRange.upperBound)
+        sendLayer = output.layer
+        sendOffsetX = output.offsetX
+        sendOffsetY = output.offsetY
+        pendingCenteredDisplayID = output.pendingCenteredDisplayID
     }
 
     // MARK: - Actions
