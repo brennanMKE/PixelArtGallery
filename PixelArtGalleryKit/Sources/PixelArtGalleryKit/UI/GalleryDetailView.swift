@@ -13,6 +13,12 @@ struct GalleryDetailView: View {
     @State private var isRenaming = false
     /// Working text for the rename alert's text field.
     @State private var renameText: String = ""
+    /// Whether the display-first send picker (#0064) is pushed. A Bool
+    /// rather than a `Hashable` route value because `GalleryItem.self` is
+    /// already claimed by `GalleryListView`'s own `navigationDestination`, and
+    /// there is exactly one picker instance per detail view — both the
+    /// toolbar action and the empty-state action trigger the same push.
+    @State private var isPickingDisplay = false
 
     var body: some View {
         List {
@@ -31,9 +37,9 @@ struct GalleryDetailView: View {
                     EmptyStateView(
                         icon: "square.grid.2x2",
                         title: "No variants yet",
-                        message: "Create a pixelated variant at a target size to preview and send it.",
-                        actionLabel: "Create Variant",
-                        action: startVariantCreation
+                        message: "Pick a display to auto-create a fitted variant, or use Custom Size… from the toolbar.",
+                        actionLabel: "Send to Display",
+                        action: { isPickingDisplay = true }
                     )
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
@@ -89,14 +95,24 @@ struct GalleryDetailView: View {
         .navigationDestination(for: Variant.self) { variant in
             VariantDetailView(variant: variant, coordinator: coordinator)
         }
+        .navigationDestination(isPresented: $isPickingDisplay) {
+            DisplaySendPickerView(item: item, coordinator: coordinator)
+        }
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
         #endif
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
+                Button {
+                    isPickingDisplay = true
+                } label: {
+                    Label("Send to Display", systemImage: "display")
+                }
+            }
+            ToolbarItem(placement: .secondaryAction) {
                 Button(action: startVariantCreation) {
-                    Label("Create Variant", systemImage: "plus")
+                    Label("Custom Size…", systemImage: "ruler")
                 }
             }
             ToolbarItem(placement: .secondaryAction) {

@@ -11,6 +11,13 @@ struct VariantDetailView: View {
     /// Live list of persisted displays to send to.
     @Query(sort: \FlaschenTaschenDisplay.displayName) private var displays: [FlaschenTaschenDisplay]
 
+    /// The display a display-first push (#0064) wants the send offset
+    /// centered on, or `nil` for the ordinary variant-list entry point. Set
+    /// once at init and consumed (cleared) the first time `seedSendDefaults()`
+    /// applies the centered offset for this display, so it never re-fires on
+    /// a later reseed (e.g. the user switching displays).
+    @State private var pendingCenteredDisplayID: UUID?
+
     @State private var selectedDisplayID: UUID?
     @State private var sendLayer: Int = FlaschenTaschenDisplay.defaultLayer
     /// Paint offsets for the current send, seeded from the selected display's
@@ -37,6 +44,18 @@ struct VariantDetailView: View {
     /// The currently selected display resolved from `selectedDisplayID`.
     private var selectedDisplay: FlaschenTaschenDisplay? {
         displays.first { $0.id == selectedDisplayID }
+    }
+
+    /// - Parameter centerOnDisplayID: When arriving from the display-first
+    ///   picker (#0064), the id of the display the send offset should be
+    ///   seeded to the aspect-fit centered value for, instead of that
+    ///   display's stored defaults. Defaults to `nil` so every existing call
+    ///   site (opening a variant from the variant list) compiles unchanged and
+    ///   keeps today's stored-defaults seeding behavior.
+    init(variant: Variant, coordinator: GalleryCoordinator, centerOnDisplayID: UUID? = nil) {
+        self.variant = variant
+        self.coordinator = coordinator
+        _pendingCenteredDisplayID = State(initialValue: centerOnDisplayID)
     }
 
     var body: some View {
@@ -276,24 +295,40 @@ struct VariantDetailView: View {
         }
     }
 
-    /// Valid range for the X offset stepper: `0` up to the selected display's
-    /// width (exclusive of the last column so the offset can't push the whole
-    /// frame off-display). Collapses to `0...0` with no display selected.
+    /// Valid range for the X offset stepper: `0` up to `displayWidth -
+    /// variant.targetWidth` (#0064), so a nudge can never push the image
+    /// past the display's trailing edge. Collapses to `0...0` with no display
+    /// selected, or when the variant is already as wide as (or wider than)
+    /// the display.
     private var offsetXRange: ClosedRange<Int> {
-        guard let display = selectedDisplay, display.displayWidth > 1 else { return 0...0 }
-        return 0...(display.displayWidth - 1)
+        guard let display = selectedDisplay else { return 0...0 }
+        return FlaschenTaschenDisplay.offsetRange(
+            displayDimension: display.displayWidth, imageDimension: variant.targetWidth
+        )
     }
 
     /// Valid range for the Y offset stepper, mirroring ``offsetXRange``.
     private var offsetYRange: ClosedRange<Int> {
-        guard let display = selectedDisplay, display.displayHeight > 1 else { return 0...0 }
-        return 0...(display.displayHeight - 1)
+        guard let display = selectedDisplay else { return 0...0 }
+        return FlaschenTaschenDisplay.offsetRange(
+            displayDimension: display.displayHeight, imageDimension: variant.targetHeight
+        )
     }
 
     /// Auto-select the display whose geometry matches this variant's
     /// dimensions (#0055), falling back to the #0032 rule (keep a still-valid
     /// current, else the default display, else the first) when none match.
+    ///
+    /// A pending display-first push (#0064) takes priority over both: a
+    /// letterboxed fitted variant's dimensions don't equal the display's own
+    /// dimensions, so the #0055 geometry match would not otherwise pick the
+    /// display the user just chose.
     private func updateSelectedDisplay() {
+        if let pendingCenteredDisplayID, displays.contains(where: { $0.id == pendingCenteredDisplayID }) {
+            selectedDisplayID = pendingCenteredDisplayID
+            return
+        }
+
         selectedDisplayID = FlaschenTaschenDisplay.preferredSelection(
             current: selectedDisplayID,
             variantWidth: variant.targetWidth,
@@ -308,9 +343,29 @@ struct VariantDetailView: View {
     /// further bounded to this display's stepper range so a stored default
     /// that exceeds the display's current geometry doesn't leave the stepper
     /// showing an out-of-range value.
+    ///
+    /// Exception (#0064): when this seed matches the pending display-first
+    /// push's display, the x/y offsets are instead seeded to the aspect-fit
+    /// centering offset for this variant on that display — not the display's
+    /// stored defaults — and the pending state is consumed (cleared) so it
+    /// never fires again for a later reseed (e.g. the user switching displays
+    /// and back). The layer still seeds from the display's stored default in
+    /// both cases.
     private func seedSendDefaults() {
         guard let display = selectedDisplay else { return }
         sendLayer = FlaschenTaschenDisplay.clampedLayer(display.layer)
+
+        if let pendingCenteredDisplayID, pendingCenteredDisplayID == selectedDisplayID {
+            let centered = AspectFit.centeringOffset(
+                imageWidth: variant.targetWidth, imageHeight: variant.targetHeight,
+                displayWidth: display.displayWidth, displayHeight: display.displayHeight
+            )
+            sendOffsetX = min(centered.x, offsetXRange.upperBound)
+            sendOffsetY = min(centered.y, offsetYRange.upperBound)
+            self.pendingCenteredDisplayID = nil
+            return
+        }
+
         sendOffsetX = min(FlaschenTaschenDisplay.clampedOffset(display.offsetX), offsetXRange.upperBound)
         sendOffsetY = min(FlaschenTaschenDisplay.clampedOffset(display.offsetY), offsetYRange.upperBound)
     }

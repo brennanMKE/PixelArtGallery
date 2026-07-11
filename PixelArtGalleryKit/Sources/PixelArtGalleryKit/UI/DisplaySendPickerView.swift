@@ -1,35 +1,51 @@
 import SwiftData
 import SwiftUI
 
-/// Lists all persisted Flaschen Taschen displays and lets the user manage them
-/// in place: edit, delete, run an mDNS scan to discover more, or add one
-/// manually (#0054). This is now the sole home for display management —
-/// embedded directly in ``SettingsView`` on both platforms — rather than a
-/// separate destination reachable only from the gallery toolbar.
+/// A pushed list of known Flaschen Taschen displays for a single gallery item
+/// (#0061/#0064) — the display-first entry point. Tapping a display
+/// auto-creates (or reuses) the aspect-fit, centered variant via
+/// ``GalleryCoordinator/createFittedVariant(for:display:)`` and pushes onward
+/// to ``VariantDetailView`` with the send offset seeded to the centered
+/// value and the display preselected, so the user can send immediately with
+/// no manual dimension entry.
 ///
-/// The view owns the live `@Query`; the coordinator handles mutations (edit,
-/// delete, discovery merge) through its injected `ModelContext`, mirroring the
-/// pattern in ``GalleryListView``.
-struct DisplayRegistryView: View {
+/// A pushed destination (not a sheet) so the onward push to
+/// `VariantDetailView` stays in the same navigation stack — `VariantDetailView`
+/// is built as pushed content (nav title, toolbar, `.onDisappear` send-stop),
+/// so a sheet would need dismiss-then-push gymnastics.
+struct DisplaySendPickerView: View {
+    let item: GalleryItem
     let coordinator: GalleryCoordinator
 
     @Environment(\.modelContext) private var modelContext
 
-    /// Live, auto-updating registry sourced directly from SwiftData.
+    /// Live, auto-updating registry, mirroring ``DisplayRegistryView``'s query.
     @Query(sort: \FlaschenTaschenDisplay.discoveredDate, order: .reverse)
     private var displays: [FlaschenTaschenDisplay]
 
+    /// The display currently creating a fitted variant, if any. Disables the
+    /// other rows and shows a spinner in the tapped row so a double-tap can't
+    /// kick off two creations.
+    @State private var creatingDisplayID: UUID?
+    /// The just-created (or reused) variant plus the display it was fitted
+    /// for, driving the onward push to `VariantDetailView`.
+    @State private var pushTarget: FittedVariantPush?
+    /// Local error alert. The root `GalleryListView`'s `currentError` alert is
+    /// covered by this pushed view, so failures here need their own surface.
+    @State private var errorMessage: String?
+
     @State private var isScanning = false
     @State private var showManualEntry = false
-    @State private var editTarget: FlaschenTaschenDisplay?
     @State private var scanResultMessage: String?
 
-    /// Whether the built-in seeded default display (`source == defaultSource`)
-    /// still exists. When it doesn't — because the user deleted it while
-    /// keeping other displays — a "Restore Default Display" affordance is
-    /// shown so it isn't gone for good.
-    private var hasDefaultDisplay: Bool {
-        displays.contains { $0.source == FlaschenTaschenDisplay.defaultSource }
+    /// Bundles a freshly created (or reused) fitted variant with the display
+    /// it was fitted for, so both can be threaded through the item-binding
+    /// `navigationDestination` below in a single push. `Hashable` is
+    /// synthesized automatically — `Variant` (a SwiftData `@Model`) and
+    /// `UUID` both already conform.
+    private struct FittedVariantPush: Hashable {
+        let variant: Variant
+        let displayID: UUID
     }
 
     var body: some View {
@@ -38,39 +54,25 @@ struct DisplayRegistryView: View {
                 emptyState
             } else {
                 List {
-                    if !hasDefaultDisplay {
-                        restoreDefaultSection
-                    }
                     ForEach(displays) { display in
                         Button {
-                            editTarget = display
+                            send(to: display)
                         } label: {
-                            DisplayRow(display: display)
+                            HStack {
+                                DisplayRow(display: display)
+                                if creatingDisplayID == display.id {
+                                    ProgressView()
+                                }
+                            }
                         }
                         .buttonStyle(.plain)
-                        .contextMenu {
-                            Button {
-                                editTarget = display
-                            } label: {
-                                Label("Edit", systemImage: "pencil")
-                            }
-                            Button(role: .destructive) {
-                                coordinator.deleteDisplay(display)
-                            } label: {
-                                Label("Delete", systemImage: "trash")
-                            }
-                        }
-                    }
-                    .onDelete { offsets in
-                        for index in offsets {
-                            coordinator.deleteDisplay(displays[index])
-                        }
+                        .disabled(creatingDisplayID != nil)
                     }
                 }
                 .scrollContentBackground(.hidden)
             }
         }
-        .navigationTitle("Settings")
+        .navigationTitle("Send to Display")
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
@@ -95,6 +97,12 @@ struct DisplayRegistryView: View {
                 }
             }
         }
+        .navigationDestination(item: $pushTarget) { push in
+            VariantDetailView(
+                variant: push.variant, coordinator: coordinator,
+                centerOnDisplayID: push.displayID
+            )
+        }
         .sheet(isPresented: $showManualEntry) {
             DisplayEditorView(mode: .add) { validated, layer in
                 try coordinator.addManualDisplay(
@@ -109,11 +117,6 @@ struct DisplayRegistryView: View {
                 )
             }
         }
-        .sheet(item: $editTarget) { target in
-            DisplayEditorView(mode: .edit(target)) { validated, layer in
-                try coordinator.updateDisplay(target, with: validated, layer: layer)
-            }
-        }
         .alert("Scan Complete", isPresented: Binding(
             get: { scanResultMessage != nil },
             set: { if !$0 { scanResultMessage = nil } }
@@ -122,25 +125,19 @@ struct DisplayRegistryView: View {
         } message: {
             Text(scanResultMessage ?? "")
         }
-        .onAppear {
-            coordinator.configure(modelContext: modelContext)
+        .alert("Couldn't Create Variant", isPresented: Binding(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+        )) {
+            Button("OK") { errorMessage = nil }
+        } message: {
+            Text(errorMessage ?? "")
         }
-    }
-
-    /// Shown above the list when the seeded default display has been deleted
-    /// while other displays remain, so it's never gone for good.
-    private var restoreDefaultSection: some View {
-        Section {
-            HStack(alignment: .top) {
-                Image(systemName: "display")
-                    .foregroundStyle(.secondary)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("No default display is configured.")
-                    Button("Restore Default Display") {
-                        coordinator.restoreDefaultDisplay()
-                    }
-                }
-            }
+        .onAppear {
+            // Belt-and-suspenders: the coordinator arriving from GalleryListView
+            // is already configured, but Scan/Add Manually can be used from
+            // here directly, mirroring DisplayRegistryView.
+            coordinator.configure(modelContext: modelContext)
         }
     }
 
@@ -185,6 +182,25 @@ struct DisplayRegistryView: View {
         .padding()
     }
 
+    /// Create (or reuse) the fitted variant for `display` and push onward to
+    /// `VariantDetailView` once it's ready. Guarded by `creatingDisplayID` so
+    /// a double-tap (or tapping a second row while the first is in flight)
+    /// can't kick off two creations.
+    private func send(to display: FlaschenTaschenDisplay) {
+        guard creatingDisplayID == nil else { return }
+        creatingDisplayID = display.id
+        let displayID = display.id
+        Task {
+            do {
+                let variant = try await coordinator.createFittedVariant(for: item, display: display)
+                pushTarget = FittedVariantPush(variant: variant, displayID: displayID)
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+            creatingDisplayID = nil
+        }
+    }
+
     private func scan() {
         guard !isScanning else { return }
         isScanning = true
@@ -197,7 +213,14 @@ struct DisplayRegistryView: View {
 }
 
 #Preview {
+    let sampleItem = GalleryItem(
+        originalImagePath: "sample.jpg",
+        originalName: "Sample Image",
+        originalWidth: 800,
+        originalHeight: 600
+    )
+
     NavigationStack {
-        DisplayRegistryView(coordinator: GalleryCoordinator())
+        DisplaySendPickerView(item: sampleItem, coordinator: GalleryCoordinator())
     }
 }

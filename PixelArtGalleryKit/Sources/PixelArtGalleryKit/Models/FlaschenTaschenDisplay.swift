@@ -114,6 +114,19 @@ public final class FlaschenTaschenDisplay {
         max(value, 0)
     }
 
+    /// Stepper range keeping `offset + imageDimension <= displayDimension`
+    /// (#0064), so a manual offset nudge can never push the painted image off
+    /// the display's edge.
+    ///
+    /// Collapses to `0...0` when the image is as large as (or larger than) the
+    /// display on this axis — there is no room to move it, so the offset is
+    /// pinned at the origin. `nonisolated` because it is pure integer math
+    /// with no dependency on the `@MainActor`-isolated model instance, and is
+    /// exercised directly from Swift Testing's `DisplayOffsetRangeTests`.
+    nonisolated static func offsetRange(displayDimension: Int, imageDimension: Int) -> ClosedRange<Int> {
+        0...max(0, displayDimension - imageDimension)
+    }
+
     /// Build the built-in default Flaschen Taschen display: the standard FT
     /// hostname and port with a 45×35 geometry. Seeded on first launch so the
     /// "Send to Display" picker is never empty out of the box, and editable in
