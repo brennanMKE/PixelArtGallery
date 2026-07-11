@@ -114,6 +114,48 @@ import UniformTypeIdentifiers
         }
     }
 
+    // MARK: - processFitting (#0062)
+
+    /// A 32x16 (2:1) source into an 8x8 display should be width-bound: fit to
+    /// 8x4, centered with a vertical offset of 2. The returned grid's own
+    /// dimensions must equal the placement's fit dims — the grid IS the fit
+    /// size, with no letterbox bars baked in.
+    @Test func processFittingProducesFitSizedGrid() async throws {
+        let pngData = try Self.makePNGData(width: 32, height: 16, red: 1, green: 0, blue: 0)
+
+        let engine = PixelationEngine()
+        let result = try await engine.processFitting(imageData: pngData, displayWidth: 8, displayHeight: 8)
+
+        #expect(result.placement == AspectFit.Placement(width: 8, height: 4, offsetX: 0, offsetY: 2))
+        #expect(result.grid.width == result.placement.width, "Grid width should equal the computed fit width")
+        #expect(result.grid.height == result.placement.height, "Grid height should equal the computed fit height")
+    }
+
+    /// The fit math must run on the post-EXIF-orientation dimensions, not the
+    /// raw encoded ones (mirrors the #0048 orientation regression covered
+    /// above for `process`). An 8x4 image tagged with orientation 6 (90° CW)
+    /// decodes upright as 4x8; fit into an 8x8 display it should come out
+    /// portrait (4 wide, 8 tall), not landscape.
+    @Test func processFittingHonorsExifOrientation() async throws {
+        let base = try Self.makeSolidImage(width: 8, height: 4, red: 0, green: 0, blue: 1)
+        let rotatedData = try Self.encode(base, orientation: 6) // 90° CW: upright decode is 4x8
+
+        let engine = PixelationEngine()
+        let result = try await engine.processFitting(imageData: rotatedData, displayWidth: 8, displayHeight: 8)
+
+        #expect(result.placement == AspectFit.Placement(width: 4, height: 8, offsetX: 2, offsetY: 0))
+        #expect(result.grid.width == 4)
+        #expect(result.grid.height == 8)
+    }
+
+    @Test func processFittingRejectsInvalidDisplayDimensions() async throws {
+        let engine = PixelationEngine()
+        let pngData = try? Self.makePNGData(width: 4, height: 4, red: 0, green: 1, blue: 0)
+        await #expect(throws: PixelationError.invalidTargetDimensions(width: 0, height: 8)) {
+            _ = try await engine.processFitting(imageData: pngData ?? Data(), displayWidth: 0, displayHeight: 8)
+        }
+    }
+
     /// A square image with the top-left quadrant red and the rest black — an
     /// asymmetric marker that makes rotation observable.
     private static func makeQuadrantMarkerImage(side: Int) throws -> CGImage {
@@ -150,8 +192,8 @@ import UniformTypeIdentifiers
         return mutableData as Data
     }
 
-    /// Generate a solid-color PNG of the given size, platform-independently.
-    private static func makePNGData(width: Int, height: Int, red: CGFloat, green: CGFloat, blue: CGFloat) throws -> Data {
+    /// Generate a solid-color `CGImage` of the given size, platform-independently.
+    private static func makeSolidImage(width: Int, height: Int, red: CGFloat, green: CGFloat, blue: CGFloat) throws -> CGImage {
         let colorSpace = CGColorSpaceCreateDeviceRGB()
         let context = try #require(CGContext(
             data: nil,
@@ -164,7 +206,12 @@ import UniformTypeIdentifiers
         ))
         context.setFillColor(CGColor(red: red, green: green, blue: blue, alpha: 1))
         context.fill(CGRect(x: 0, y: 0, width: width, height: height))
-        let image = try #require(context.makeImage())
+        return try #require(context.makeImage())
+    }
+
+    /// Generate a solid-color PNG of the given size, platform-independently.
+    private static func makePNGData(width: Int, height: Int, red: CGFloat, green: CGFloat, blue: CGFloat) throws -> Data {
+        let image = try makeSolidImage(width: width, height: height, red: red, green: green, blue: blue)
 
         let mutableData = NSMutableData()
         let destination = try #require(CGImageDestinationCreateWithData(

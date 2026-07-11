@@ -35,6 +35,58 @@ nonisolated public struct PixelationEngine: Sendable {
 
         AppLog.imageProcessor.debug("Pixelating \(imageData.count) bytes -> \(targetWidth)×\(targetHeight)")
 
+        let cgImage = try Self.decodeUpright(imageData)
+
+        let grid = try pixelate(cgImage, targetWidth: targetWidth, targetHeight: targetHeight)
+        AppLog.imageProcessor.info("Pixelated \(cgImage.width)×\(cgImage.height) source into \(targetWidth)×\(targetHeight) grid")
+        return grid
+    }
+
+    /// Pixelate to the largest aspect-preserving size that fits the display,
+    /// returning the fit-sized grid and its centering placement.
+    ///
+    /// The grid IS the fit size — letterbox bars are NOT baked in; the caller
+    /// (the send/display coordinator, #0063) centers the grid on the larger
+    /// display canvas using `placement.offsetX`/`offsetY`. Pixelating at the
+    /// fit dimensions is distortion-free by construction: the fit width/height
+    /// match the source's aspect ratio (within one pixel of integer rounding),
+    /// so the existing stretch-draw in `pixelate` becomes a uniform scale.
+    /// - Parameters:
+    ///   - imageData: Encoded image bytes (PNG, JPEG, HEIC, …).
+    ///   - displayWidth: Width of the display canvas the fit result will be centered on.
+    ///   - displayHeight: Height of the display canvas the fit result will be centered on.
+    /// - Returns: The fit-sized `PixelGrid` and the `AspectFit.Placement` used to produce it.
+    public func processFitting(
+        imageData: Data, displayWidth: Int, displayHeight: Int
+    ) async throws -> (grid: PixelGrid, placement: AspectFit.Placement) {
+        guard displayWidth > 0, displayHeight > 0 else {
+            AppLog.imageProcessor.error("Invalid display dimensions \(displayWidth)×\(displayHeight)")
+            throw PixelationError.invalidTargetDimensions(width: displayWidth, height: displayHeight)
+        }
+
+        let cgImage = try Self.decodeUpright(imageData)
+
+        let placement = AspectFit.fit(
+            sourceWidth: cgImage.width, sourceHeight: cgImage.height,
+            displayWidth: displayWidth, displayHeight: displayHeight
+        )
+        let grid = try pixelate(cgImage, targetWidth: placement.width, targetHeight: placement.height)
+        AppLog.imageProcessor.info(
+            "Pixelated \(cgImage.width)×\(cgImage.height) source into \(placement.width)×\(placement.height) fit @ (\(placement.offsetX),\(placement.offsetY)) on \(displayWidth)×\(displayHeight) display"
+        )
+        return (grid: grid, placement: placement)
+    }
+
+    /// Decode the primary image with its EXIF orientation baked into the pixels,
+    /// yielding an upright `CGImage`.
+    ///
+    /// ImageIO's thumbnail generator applies `kCGImagePropertyOrientation` when
+    /// `kCGImageSourceCreateThumbnailWithTransform` is set, which the plain
+    /// `CGImageSourceCreateImageAtIndex` decode does not. The max pixel size is
+    /// pinned to the source's largest dimension so no resolution is lost before
+    /// the downsample step (the value only caps the output, it never upscales).
+    /// Falls back to a raw decode if the thumbnail path declines to produce one.
+    private static func decodeUpright(_ imageData: Data) throws -> CGImage {
         guard let source = CGImageSourceCreateWithData(imageData as CFData, nil) else {
             AppLog.imageProcessor.error("Failed to create image source from \(imageData.count) bytes")
             throw PixelationError.failedToCreateImageSource
@@ -49,20 +101,10 @@ nonisolated public struct PixelationEngine: Sendable {
             AppLog.imageProcessor.error("Failed to decode image from source")
             throw PixelationError.failedToDecodeImage
         }
-
-        let grid = try pixelate(cgImage, targetWidth: targetWidth, targetHeight: targetHeight)
-        AppLog.imageProcessor.info("Pixelated \(cgImage.width)×\(cgImage.height) source into \(targetWidth)×\(targetHeight) grid")
-        return grid
+        return cgImage
     }
 
-    /// Decode the primary image with its EXIF orientation baked into the pixels,
-    /// yielding an upright `CGImage`.
-    ///
-    /// ImageIO's thumbnail generator applies `kCGImagePropertyOrientation` when
-    /// `kCGImageSourceCreateThumbnailWithTransform` is set, which the plain
-    /// `CGImageSourceCreateImageAtIndex` decode does not. The max pixel size is
-    /// pinned to the source's largest dimension so no resolution is lost before
-    /// the downsample step (the value only caps the output, it never upscales).
+    /// Thumbnail-based upright decode used by `decodeUpright`.
     /// Returns `nil` if the source has no usable dimensions or ImageIO declines
     /// to produce a thumbnail, letting the caller fall back to a raw decode.
     static func uprightImage(from source: CGImageSource) -> CGImage? {
