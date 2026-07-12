@@ -16,6 +16,18 @@ public enum ImportResult: Equatable {
     case duplicate(existingName: String)
 }
 
+/// Outcome of a ``GalleryCoordinator/reconcileBuiltInSpritesIfNeeded()`` call
+/// (#0074, #0075), letting callers (and tests) distinguish freshly-inserted
+/// built-ins from existing ones updated in place because the bundled art
+/// changed.
+struct BuiltInReconcileResult: Equatable {
+    /// Number of built-in sprites inserted because they were missing.
+    var inserted = 0
+    /// Number of existing built-in sprites updated in place because their
+    /// stored content hash no longer matched the bundled PNG's hash.
+    var updated = 0
+}
+
 /// Errors raised by the gallery coordinator's persistence operations.
 nonisolated enum GalleryCoordinatorError: LocalizedError, Equatable {
     /// A mutation was requested before a SwiftData `ModelContext` was injected.
@@ -220,73 +232,138 @@ final class GalleryCoordinator {
         }
     }
 
-    /// Reconcile the bundled built-in sprites (#0074) so they're always
-    /// present, re-inserting any missing from the bundle on every launch.
+    /// Reconcile the bundled built-in sprites (#0074, #0075) so they're always
+    /// present and always up to date, re-inserting any missing from the
+    /// bundle on every launch, and updating any built-in in place whose
+    /// stored content hash no longer matches the bundled PNG's hash.
     ///
     /// Unlike ``seedDefaultDisplayIfNeeded()``, there is **no seed-once flag**
     /// — presence IS the state, which is exactly what makes built-ins
     /// always-restore: deleting one (which the UI disallows, but a damaged
     /// store could) simply means it's missing next time this runs, and it
-    /// comes back. This method only ever inserts; it never deletes and never
-    /// touches user items.
+    /// comes back. The update path exists because built-ins are non-deletable
+    /// and matched by name (#0074), so shipping new/bigger art (#0075) could
+    /// otherwise never reach an install that already has the old sprites.
+    /// This method never deletes items and never touches user items.
     ///
     /// Guarded against re-entrancy (a second concurrent `onAppear`) and
     /// tolerant of per-sprite failures — a missing/unreadable resource or a
-    /// failed insert is logged and skipped, never blocking launch or
+    /// failed insert/update is logged and skipped, never blocking launch or
     /// aborting the remaining sprites.
-    /// - Returns: The number of built-in items inserted.
+    /// - Returns: The number of built-in items inserted and updated.
     @discardableResult
-    func reconcileBuiltInSpritesIfNeeded() async -> Int {
+    func reconcileBuiltInSpritesIfNeeded() async -> BuiltInReconcileResult {
         guard let modelContext else {
             AppLog.gallery.error("reconcileBuiltInSpritesIfNeeded called before a ModelContext was configured")
-            return 0
+            return BuiltInReconcileResult()
         }
 
         guard !isReconcilingBuiltIns else {
             AppLog.gallery.info("Skipped concurrent reconcileBuiltInSpritesIfNeeded call")
-            return 0
+            return BuiltInReconcileResult()
         }
         isReconcilingBuiltIns = true
         defer { isReconcilingBuiltIns = false }
 
-        let existingNames: Set<String>
+        let existingByName: [String: GalleryItem]
         do {
             let existing = try modelContext.fetch(FetchDescriptor<GalleryItem>(
                 predicate: #Predicate { $0.isBuiltIn == true }
             ))
-            existingNames = Set(existing.map(\.originalName))
+            existingByName = Dictionary(
+                existing.map { ($0.originalName, $0) },
+                uniquingKeysWith: { first, _ in first }
+            )
         } catch {
             AppLog.gallery.error("Failed to fetch existing built-in sprites: \(error.localizedDescription, privacy: .public)")
-            return 0
+            return BuiltInReconcileResult()
         }
 
-        var insertedCount = 0
+        var result = BuiltInReconcileResult()
         for name in Self.builtInSpriteNames {
             let displayName = name.capitalized
-            guard !existingNames.contains(displayName) else { continue }
 
             guard let data = Self.builtInSpriteData(for: name) else {
                 AppLog.gallery.error("Missing or unreadable built-in sprite resource: \(name, privacy: .public)")
                 continue
             }
+            let bundledHash = Self.contentHash(for: data)
+
+            guard let item = existingByName[displayName] else {
+                do {
+                    try await createGalleryItem(name: displayName, imageData: data, isBuiltIn: true)
+                    result.inserted += 1
+                } catch {
+                    // A background reconcile must not pop the launch-time error
+                    // alert — createGalleryItem already set currentError above,
+                    // so clear it and just log.
+                    currentError = nil
+                    AppLog.gallery.error("Failed to insert built-in sprite '\(displayName, privacy: .public)': \(error.localizedDescription, privacy: .public)")
+                }
+                continue
+            }
+
+            guard item.contentHash != bundledHash else { continue }
 
             do {
-                try await createGalleryItem(name: displayName, imageData: data, isBuiltIn: true)
-                insertedCount += 1
+                try await updateBuiltIn(item, with: data, hash: bundledHash)
+                result.updated += 1
             } catch {
-                // A background reconcile must not pop the launch-time error
-                // alert — createGalleryItem already set currentError above,
-                // so clear it and just log.
-                currentError = nil
-                AppLog.gallery.error("Failed to insert built-in sprite '\(displayName, privacy: .public)': \(error.localizedDescription, privacy: .public)")
-                continue
+                AppLog.gallery.error("Failed to update built-in sprite '\(displayName, privacy: .public)': \(error.localizedDescription, privacy: .public)")
             }
         }
 
-        if insertedCount > 0 {
-            AppLog.gallery.info("Reconciled built-in sprites: \(insertedCount) inserted")
+        if result.inserted > 0 || result.updated > 0 {
+            AppLog.gallery.info("Reconciled built-in sprites: \(result.inserted) inserted, \(result.updated) updated")
         }
-        return insertedCount
+        return result
+    }
+
+    /// Update a built-in ``GalleryItem`` in place when the bundled sprite's
+    /// content hash no longer matches the stored one (#0075).
+    ///
+    /// Saves the new bytes under a fresh filename first (never overwriting in
+    /// place), mutates the **same** `GalleryItem` instance so its `id` and
+    /// `variants` relationship are preserved, then deletes the old file only
+    /// after the model save succeeds. If the model save fails, the
+    /// newly-saved file is rolled back so nothing is orphaned; if the old
+    /// file's delete fails after a successful save, that's a best-effort
+    /// no-op that only orphans a few hundred bytes.
+    /// - Parameters:
+    ///   - item: The existing built-in item to update.
+    ///   - data: The bundled PNG bytes to replace it with.
+    ///   - hash: The precomputed content hash of `data`.
+    private func updateBuiltIn(_ item: GalleryItem, with data: Data, hash: String) async throws {
+        guard let modelContext else {
+            AppLog.gallery.error("updateBuiltIn called before a ModelContext was configured")
+            throw GalleryCoordinatorError.missingModelContext
+        }
+
+        let storage = try fileStorageManager()
+        let oldPath = item.originalImagePath
+        let newPath = try await storage.save(imageData: data)
+
+        var width = 0
+        var height = 0
+        if let cgImage = try? loadImage(from: data) {
+            width = cgImage.width
+            height = cgImage.height
+        }
+
+        item.originalImagePath = newPath
+        item.originalWidth = width
+        item.originalHeight = height
+        item.contentHash = hash
+
+        do {
+            try modelContext.save()
+        } catch {
+            try? await storage.delete(filename: newPath)
+            throw error
+        }
+
+        try? await storage.delete(filename: oldPath)
+        AppLog.gallery.info("Updated built-in sprite '\(item.originalName, privacy: .public)' to new bundled content (\(width)×\(height))")
     }
 
     /// Compute the lowercase hex SHA-256 digest of raw image bytes.

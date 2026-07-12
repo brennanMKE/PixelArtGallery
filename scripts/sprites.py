@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
 Pixel Art Gallery sprite generator for FlaschenTaschen (45x35).
-Each sprite is drawn on its own native grid, then blitted 1:1 (no scaling)
-and centered onto a 45x35 canvas. Every color edge lands on a pixel boundary.
+Each sprite is drawn on its own native grid, then integer-scaled up
+(uniform, nearest-neighbor, largest multiple that fits) and centered onto a
+45x35 canvas. Every color edge lands on a pixel boundary.
 """
 from PIL import Image
 import argparse
@@ -44,15 +45,19 @@ LEGEND = {
 def render(rows, bg=BG):
     h = len(rows)
     w = max(len(r) for r in rows)
-    img = Image.new("RGB", (W, H), bg)
-    px = img.load()
-    ox = (W - w) // 2
-    oy = (H - h) // 2
+    # Draw the sprite on its native grid (transparent cells -> bg).
+    native = Image.new("RGB", (w, h), bg)
+    px = native.load()
     for j, row in enumerate(rows):
         for i, ch in enumerate(row):
             col = LEGEND.get(ch, _)
             if col is not None:
-                px[ox + i, oy + j] = col
+                px[i, j] = col
+    # Largest uniform integer scale that fits the canvas; nearest keeps edges crisp.
+    scale = max(1, min(W // w, H // h))
+    scaled = native.resize((w * scale, h * scale), Image.NEAREST)
+    img = Image.new("RGB", (W, H), bg)
+    img.paste(scaled, ((W - scaled.width) // 2, (H - scaled.height) // 2))
     return img
 
 

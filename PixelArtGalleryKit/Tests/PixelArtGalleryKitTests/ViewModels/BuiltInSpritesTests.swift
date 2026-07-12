@@ -85,8 +85,9 @@ import UniformTypeIdentifiers
         let coordinator = try makeCoordinator()
         coordinator.configure(modelContext: context)
 
-        let inserted = await coordinator.reconcileBuiltInSpritesIfNeeded()
-        #expect(inserted == 11, "An empty store should get all 11 built-in sprites")
+        let result = await coordinator.reconcileBuiltInSpritesIfNeeded()
+        #expect(result.inserted == 11, "An empty store should get all 11 built-in sprites")
+        #expect(result.updated == 0, "A fresh empty store has nothing to update")
 
         let items = try context.fetch(FetchDescriptor<GalleryItem>())
         #expect(items.count == 11)
@@ -107,10 +108,10 @@ import UniformTypeIdentifiers
         coordinator.configure(modelContext: context)
 
         let first = await coordinator.reconcileBuiltInSpritesIfNeeded()
-        #expect(first == 11)
+        #expect(first == BuiltInReconcileResult(inserted: 11, updated: 0))
 
         let second = await coordinator.reconcileBuiltInSpritesIfNeeded()
-        #expect(second == 0, "A second reconcile with all sprites present must insert nothing")
+        #expect(second == BuiltInReconcileResult(), "A second reconcile with all sprites present must insert or update nothing")
 
         let items = try context.fetch(FetchDescriptor<GalleryItem>())
         #expect(items.count == 11, "Repeated reconcile must never create duplicates")
@@ -140,7 +141,7 @@ import UniformTypeIdentifiers
         #expect(items.count == 7)
 
         let reinserted = await coordinator.reconcileBuiltInSpritesIfNeeded()
-        #expect(reinserted == 4, "Reconcile should insert exactly the 4 missing sprites")
+        #expect(reinserted == BuiltInReconcileResult(inserted: 4, updated: 0), "Reconcile should insert exactly the 4 missing sprites")
 
         items = try context.fetch(FetchDescriptor<GalleryItem>())
         #expect(items.count == 11, "Total should be back to 11")
@@ -159,7 +160,7 @@ import UniformTypeIdentifiers
         try await coordinator.createGalleryItem(name: "My Photo", imageData: userPNG)
 
         let inserted = await coordinator.reconcileBuiltInSpritesIfNeeded()
-        #expect(inserted == 11)
+        #expect(inserted == BuiltInReconcileResult(inserted: 11, updated: 0))
 
         let items = try context.fetch(FetchDescriptor<GalleryItem>())
         #expect(items.count == 12, "The user item plus 11 built-ins")
@@ -169,7 +170,7 @@ import UniformTypeIdentifiers
 
         // Reconcile again: still never deletes or duplicates anything.
         let second = await coordinator.reconcileBuiltInSpritesIfNeeded()
-        #expect(second == 0)
+        #expect(second == BuiltInReconcileResult())
         let itemsAfter = try context.fetch(FetchDescriptor<GalleryItem>())
         #expect(itemsAfter.count == 12, "Reconcile must never delete the user's item")
     }
@@ -190,13 +191,183 @@ import UniformTypeIdentifiers
         #expect(coordinator.importMessage == nil)
 
         let inserted = await coordinator.reconcileBuiltInSpritesIfNeeded()
-        #expect(inserted == 11, "The dup-check bypass must let all 11 built-ins insert regardless")
+        #expect(inserted == BuiltInReconcileResult(inserted: 11, updated: 0), "The dup-check bypass must let all 11 built-ins insert regardless")
         #expect(coordinator.importMessage == nil, "Reconcile must never surface the duplicate-import message")
 
         let items = try context.fetch(FetchDescriptor<GalleryItem>())
         #expect(items.count == 12, "The user's item plus all 11 built-ins, including the built-in 'Coin'")
         #expect(items.contains { $0.originalName == "Coin" && $0.isBuiltIn })
         #expect(items.contains { $0.originalName == "Weird Coin" && !$0.isBuiltIn })
+    }
+
+    // MARK: - Reconcile: update-on-content-change (#0075)
+
+    @Test func reconcileUpdatesBuiltInWhoseStoredContentDiffers() async throws {
+        let context = try makeContext()
+        let coordinator = try makeCoordinator()
+        coordinator.configure(modelContext: context)
+
+        _ = await coordinator.reconcileBuiltInSpritesIfNeeded()
+        let items = try context.fetch(FetchDescriptor<GalleryItem>())
+        let coinItem = try #require(items.first { $0.originalName == "Coin" })
+        let originalID = coinItem.id
+
+        // Simulate a stale install: swap in synthetic "old" bytes and hash,
+        // as if this item was inserted by an earlier version of the bundle.
+        let storage = try FileStorageManager(imageDirectory: tempDirectory)
+        let staleBytes = try Self.makePNGData(width: 9, height: 9)
+        let stalePath = try await storage.save(imageData: staleBytes)
+        coinItem.originalImagePath = stalePath
+        coinItem.originalWidth = 9
+        coinItem.originalHeight = 9
+        coinItem.contentHash = GalleryCoordinator.contentHash(for: staleBytes)
+        try context.save()
+
+        let result = await coordinator.reconcileBuiltInSpritesIfNeeded()
+        #expect(result == BuiltInReconcileResult(inserted: 0, updated: 1))
+
+        let itemsAfter = try context.fetch(FetchDescriptor<GalleryItem>())
+        #expect(itemsAfter.count == 11, "Updating must not re-insert or duplicate")
+        let updatedCoin = try #require(itemsAfter.first { $0.originalName == "Coin" })
+        #expect(updatedCoin.id == originalID, "The same GalleryItem instance/id must be preserved")
+
+        let bundledData = try #require(GalleryCoordinator.builtInSpriteData(for: "coin"))
+        #expect(updatedCoin.contentHash == GalleryCoordinator.contentHash(for: bundledData))
+        #expect(updatedCoin.originalWidth == 45)
+        #expect(updatedCoin.originalHeight == 35)
+        #expect(updatedCoin.originalImagePath != stalePath, "A new file must be written, never overwritten in place")
+
+        let staleStillExists = await storage.exists(filename: stalePath)
+        #expect(staleStillExists == false, "The old (stale) file must be deleted after the update")
+        let newFileExists = await storage.exists(filename: updatedCoin.originalImagePath)
+        #expect(newFileExists == true, "The newly-saved file must exist on disk")
+    }
+
+    @Test func reconcileIsANoOpWhenAllContentMatches() async throws {
+        let context = try makeContext()
+        let coordinator = try makeCoordinator()
+        coordinator.configure(modelContext: context)
+
+        _ = await coordinator.reconcileBuiltInSpritesIfNeeded()
+        let itemsBefore = try context.fetch(FetchDescriptor<GalleryItem>())
+        let pathsBefore = Dictionary(uniqueKeysWithValues: itemsBefore.map { ($0.originalName, $0.originalImagePath) })
+        let hashesBefore = Dictionary(uniqueKeysWithValues: itemsBefore.map { ($0.originalName, $0.contentHash) })
+        let fileCountBefore = try FileManager.default.contentsOfDirectory(
+            at: tempDirectory, includingPropertiesForKeys: nil
+        ).count
+
+        let second = await coordinator.reconcileBuiltInSpritesIfNeeded()
+        #expect(second == BuiltInReconcileResult(), "Matching content on every built-in must insert and update nothing")
+
+        let itemsAfter = try context.fetch(FetchDescriptor<GalleryItem>())
+        for item in itemsAfter {
+            #expect(item.originalImagePath == pathsBefore[item.originalName], "No new file for '\(item.originalName)'")
+            #expect(item.contentHash == hashesBefore[item.originalName])
+        }
+
+        let fileCountAfter = try FileManager.default.contentsOfDirectory(
+            at: tempDirectory, includingPropertiesForKeys: nil
+        ).count
+        #expect(fileCountAfter == fileCountBefore, "No file churn when content already matches")
+    }
+
+    @Test func reconcileStillInsertsMissingWhileUpdatingStale() async throws {
+        let context = try makeContext()
+        let coordinator = try makeCoordinator()
+        coordinator.configure(modelContext: context)
+
+        _ = await coordinator.reconcileBuiltInSpritesIfNeeded()
+        var items = try context.fetch(FetchDescriptor<GalleryItem>())
+        #expect(items.count == 11)
+
+        // Damaged-store simulation: remove 2 built-ins directly via the context.
+        for item in items.prefix(2) {
+            context.delete(item)
+        }
+        try context.save()
+
+        // Stale one of the remaining built-ins, as in the update test above.
+        items = try context.fetch(FetchDescriptor<GalleryItem>())
+        let staleItem = try #require(items.first)
+        let storage = try FileStorageManager(imageDirectory: tempDirectory)
+        let staleBytes = try Self.makePNGData(width: 9, height: 9)
+        let stalePath = try await storage.save(imageData: staleBytes)
+        staleItem.originalImagePath = stalePath
+        staleItem.originalWidth = 9
+        staleItem.originalHeight = 9
+        staleItem.contentHash = GalleryCoordinator.contentHash(for: staleBytes)
+        try context.save()
+
+        let result = await coordinator.reconcileBuiltInSpritesIfNeeded()
+        #expect(result == BuiltInReconcileResult(inserted: 2, updated: 1))
+
+        items = try context.fetch(FetchDescriptor<GalleryItem>())
+        #expect(items.count == 11, "Total should be back to 11: 2 re-inserted, 1 updated in place")
+    }
+
+    @Test func reconcileUpdateLeavesUserItemsUntouched() async throws {
+        let context = try makeContext()
+        let coordinator = try makeCoordinator()
+        coordinator.configure(modelContext: context)
+
+        let userPNG = try Self.makePNGData(width: 16, height: 16)
+        try await coordinator.createGalleryItem(name: "My Photo", imageData: userPNG)
+
+        _ = await coordinator.reconcileBuiltInSpritesIfNeeded()
+        let items = try context.fetch(FetchDescriptor<GalleryItem>())
+        let userItem = try #require(items.first { $0.originalName == "My Photo" })
+        let userID = userItem.id
+        let userPath = userItem.originalImagePath
+        let userHash = userItem.contentHash
+
+        let coinItem = try #require(items.first { $0.originalName == "Coin" })
+        let storage = try FileStorageManager(imageDirectory: tempDirectory)
+        let staleBytes = try Self.makePNGData(width: 9, height: 9)
+        let stalePath = try await storage.save(imageData: staleBytes)
+        coinItem.originalImagePath = stalePath
+        coinItem.contentHash = GalleryCoordinator.contentHash(for: staleBytes)
+        try context.save()
+
+        let result = await coordinator.reconcileBuiltInSpritesIfNeeded()
+        #expect(result == BuiltInReconcileResult(inserted: 0, updated: 1))
+
+        let itemsAfter = try context.fetch(FetchDescriptor<GalleryItem>())
+        let userItemAfter = try #require(itemsAfter.first { $0.originalName == "My Photo" })
+        #expect(userItemAfter.id == userID, "The user item's id must be untouched by a built-in update")
+        #expect(userItemAfter.originalImagePath == userPath)
+        #expect(userItemAfter.contentHash == userHash)
+        #expect(!userItemAfter.isBuiltIn)
+    }
+
+    @Test func userVariantOnBuiltInSurvivesUpdate() async throws {
+        let context = try makeContext()
+        let coordinator = try makeCoordinator()
+        coordinator.configure(modelContext: context)
+
+        _ = await coordinator.reconcileBuiltInSpritesIfNeeded()
+        let items = try context.fetch(FetchDescriptor<GalleryItem>())
+        let coinItem = try #require(items.first { $0.originalName == "Coin" })
+
+        let variant = try await coordinator.createVariant(for: coinItem, width: 10, height: 10)
+        let variantID = variant.id
+        let variantPixelData = variant.pixelGridData
+
+        let storage = try FileStorageManager(imageDirectory: tempDirectory)
+        let staleBytes = try Self.makePNGData(width: 9, height: 9)
+        let stalePath = try await storage.save(imageData: staleBytes)
+        coinItem.originalImagePath = stalePath
+        coinItem.contentHash = GalleryCoordinator.contentHash(for: staleBytes)
+        try context.save()
+
+        let result = await coordinator.reconcileBuiltInSpritesIfNeeded()
+        #expect(result == BuiltInReconcileResult(inserted: 0, updated: 1))
+
+        let itemsAfter = try context.fetch(FetchDescriptor<GalleryItem>())
+        let updatedCoin = try #require(itemsAfter.first { $0.originalName == "Coin" })
+        #expect(updatedCoin.variants.count == 1, "The update must not cascade or recreate the existing variant")
+        let survivingVariant = try #require(updatedCoin.variants.first)
+        #expect(survivingVariant.id == variantID, "The variant's id must be unchanged")
+        #expect(survivingVariant.pixelGridData == variantPixelData, "The variant's pixel data must be unchanged")
     }
 
     // MARK: - Delete/rename protection
