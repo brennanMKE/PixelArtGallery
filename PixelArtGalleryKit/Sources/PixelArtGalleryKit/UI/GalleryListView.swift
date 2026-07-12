@@ -27,6 +27,10 @@ public struct GalleryListView: View {
     @State private var itemToDelete: GalleryItem?
     /// The gallery item whose send popover is presented, if any (#0067).
     @State private var selectedItem: GalleryItem?
+    /// How far the grid has scrolled, fed to the collapsing
+    /// ``GalleryBannerView`` header (#0072). `0` at rest — the header renders
+    /// fully expanded until the user scrolls.
+    @State private var headerScrollOffset: CGFloat = 0
 
     #if os(iOS)
     /// Whether the in-app Settings sheet is presented, triggered from the
@@ -63,46 +67,58 @@ public struct GalleryListView: View {
     public var body: some View {
         NavigationStack {
             ZStack {
-                // Plain matte behind the banner, grid, and empty state — the
-                // pixel wallpaper is now confined to the banner above (#0070).
+                // Plain matte behind the grid and empty state — the pixel
+                // wallpaper is confined to the collapsing header overlaid
+                // above (#0070, restructured for #0072).
                 Color.matteBackground
                     .ignoresSafeArea()
 
-                VStack(spacing: 0) {
-                    GalleryBannerView()
-
-                    Group {
-                        if galleryItems.isEmpty {
-                            EmptyStateView(
-                                icon: "photo.on.rectangle.angled",
-                                title: "No Gallery Items",
-                                message: "Import an image to start creating pixel art.",
-                                actionLabel: "Import Image",
-                                action: { coordinator.showImagePicker = true },
-                                animatedHero: true
-                            )
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        } else {
-                            // Adaptive thumbnail grid: column count reflows with
-                            // the scene width (more columns on a wide Mac window
-                            // or iPad, fewer on iPhone). Sits on the plain matte
-                            // background above, not the pixel wallpaper.
-                            ScrollView {
-                                LazyVGrid(
-                                    columns: [GridItem(.adaptive(minimum: 150, maximum: 220), spacing: Theme.Spacing.m)],
-                                    alignment: .leading,
-                                    spacing: Theme.Spacing.m
-                                ) {
-                                    ForEach(sortedItems) { item in
-                                        galleryCellButton(for: item)
-                                    }
-                                }
-                                .padding(Theme.Spacing.l)
+                if galleryItems.isEmpty {
+                    EmptyStateView(
+                        icon: "photo.on.rectangle.angled",
+                        title: "No Gallery Items",
+                        message: "Import an image to start creating pixel art.",
+                        actionLabel: "Import Image",
+                        action: { coordinator.showImagePicker = true },
+                        animatedHero: true
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    // Clears the (static, since there's nothing to scroll)
+                    // expanded header sitting on top.
+                    .safeAreaPadding(.top, GalleryHeaderMetrics.expandedHeight)
+                } else {
+                    // Adaptive thumbnail grid: column count reflows with the
+                    // scene width (more columns on a wide Mac window or
+                    // iPad, fewer on iPhone). A single full-height
+                    // ScrollView — the collapsing header overlays it and
+                    // rows scroll *behind* the header rather than clipping
+                    // against a separate ScrollView's top edge (#0072).
+                    ScrollView {
+                        LazyVGrid(
+                            columns: [GridItem(.adaptive(minimum: 150, maximum: 220), spacing: Theme.Spacing.m)],
+                            alignment: .leading,
+                            spacing: Theme.Spacing.m
+                        ) {
+                            ForEach(sortedItems) { item in
+                                galleryCellButton(for: item)
                             }
                         }
+                        .padding(Theme.Spacing.l)
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    // Constant inset — content starts below the FULL header
+                    // at rest, regardless of the overlay's current
+                    // (possibly shrunk) height. Avoids a feedback loop
+                    // between the shrinking overlay and the content inset.
+                    .contentMargins(.top, GalleryHeaderMetrics.expandedHeight, for: .scrollContent)
+                    .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                        geometry.contentOffset.y + geometry.contentInsets.top
+                    } action: { _, newValue in
+                        headerScrollOffset = newValue
+                    }
                 }
+            }
+            .overlay(alignment: .top) {
+                GalleryBannerView(scrollOffset: galleryItems.isEmpty ? 0 : headerScrollOffset)
             }
             #if os(iOS)
             // The bottom bar carries Settings, the large centered `+`, and
@@ -122,8 +138,12 @@ public struct GalleryListView: View {
             // was retired entirely in #0068.
             .navigationTitle("") // The banner owns the title; no duplicate.
             #if os(iOS)
-            .navigationBarTitleDisplayMode(.inline) // No large-title gap above the banner.
-            .toolbarBackground(.hidden, for: .navigationBar)
+            // The collapsing header (#0072) is now the sole chrome above the
+            // content — the nav bar contributes nothing (nothing pushes from
+            // here; cells present a popover/sheet) and would otherwise be
+            // phantom chrome layered over the header, so it's hidden outright
+            // rather than styled transparent.
+            .toolbar(.hidden, for: .navigationBar)
             #endif
             #if os(macOS)
             // iOS moves these actions into the bottom bar (#0071) — Settings

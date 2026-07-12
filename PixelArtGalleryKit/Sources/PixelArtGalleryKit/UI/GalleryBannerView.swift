@@ -1,34 +1,71 @@
 import SwiftUI
 
-/// The gallery's top banner: the app name over a vibrant, full-strength pixel
-/// wallpaper. Replaces the plain `.navigationTitle("Gallery")` with a
-/// deliberate hero element (#0070). Static (non-collapsing) for v1 — it does
-/// not scroll away or resize; a collapsing/large-title-style effect is a
-/// possible follow-on, not in scope here.
+/// The gallery's collapsing header: the app name over a vibrant, full-strength
+/// pixel wallpaper (#0070). Standard iOS large-title-style behavior (#0072):
+/// starts expanded at ``GalleryHeaderMetrics/expandedHeight`` with a large
+/// title, then shrinks and pins to ``GalleryHeaderMetrics/compactHeight`` as
+/// `scrollOffset` grows, driven by the enclosing `ScrollView`'s
+/// `onScrollGeometryChange`. Pass the default `scrollOffset` of `0` for a
+/// static, fully-expanded header (previews, the empty state, macOS).
 struct GalleryBannerView: View {
+    /// How far the content backing this header has scrolled — `0` at rest
+    /// (or rubber-banding past the top), growing toward
+    /// ``GalleryHeaderMetrics/collapseRange`` as the header collapses.
+    var scrollOffset: CGFloat = 0
+
+    private var height: CGFloat { GalleryHeaderMetrics.height(forScrollOffset: scrollOffset) }
+    private var titleSize: CGFloat { GalleryHeaderMetrics.titleSize(forScrollOffset: scrollOffset) }
+
     var body: some View {
         ZStack(alignment: .bottomLeading) {
-            BackgroundPixelsView(style: .vibrant)
-
-            // Bottom scrim so the title reads over the busy pattern.
+            // Bottom scrim so the title reads over the busy pattern. Lives in
+            // the content band (not the bleeding background) so it scales
+            // with the header's current height as it collapses.
             LinearGradient(
                 colors: [.clear, .black.opacity(0.45)],
                 startPoint: .top, endPoint: .bottom
             )
 
             Text("Pixel Art Gallery")
-                .font(.largeTitle.bold())
+                .font(.system(size: titleSize, weight: .bold))
                 .foregroundStyle(.white)
                 .shadow(color: .black.opacity(0.5), radius: 2, y: 1)
                 .padding(Theme.Spacing.l)
         }
-        .frame(height: 128) // Fixed content height; simple and predictable.
+        // The header's layout frame stays inside the safe area — no
+        // ignoresSafeArea on this framed view. Splitting layout (this frame)
+        // from render (the ignoresSafeArea below, scoped to the background
+        // only) was the root cause of the black bar under the banner (#0072):
+        // previously ignoresSafeArea applied to the whole fixed-height view,
+        // so its painted pixels stopped short of the taller layout slot a
+        // parent VStack reserved, leaving a bare strip of the matte
+        // background exposed.
         .frame(maxWidth: .infinity)
+        .frame(height: height)
         .clipped()
-        .ignoresSafeArea(edges: .top) // Pixels extend under the status bar / transparent nav bar.
+        .background(alignment: .top) {
+            // Only the pixel backdrop bleeds under the status bar. A
+            // fixed-size canvas (independent of `height`) so
+            // `BackgroundPixelsViewModel` never sees its size change during
+            // the collapse animation — its regen fires on column/row-count
+            // change, and a per-frame height change would visibly
+            // re-randomize the grid. `.clipped()` is applied to the canvas
+            // itself (cropping it to the header's current bounds) *before*
+            // `.ignoresSafeArea` expands the already-cropped container's
+            // render bounds up past the status bar — the container bleeds,
+            // layout is unaffected.
+            Color.clear
+                .overlay(alignment: .top) {
+                    BackgroundPixelsView(style: .vibrant)
+                        .frame(height: 220) // expanded height (128) + generous status-bar allowance; constant.
+                }
+                .clipped()
+                .ignoresSafeArea(edges: .top)
+        }
         .accessibilityAddTraits(.isHeader)
     }
 }
 
-#Preview("Light") { GalleryBannerView().preferredColorScheme(.light) }
-#Preview("Dark") { GalleryBannerView().preferredColorScheme(.dark) }
+#Preview("Light — expanded") { GalleryBannerView().preferredColorScheme(.light) }
+#Preview("Dark — expanded") { GalleryBannerView().preferredColorScheme(.dark) }
+#Preview("Collapsed") { GalleryBannerView(scrollOffset: GalleryHeaderMetrics.collapseRange) }
