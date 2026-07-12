@@ -80,17 +80,21 @@ import UniformTypeIdentifiers
 
     // MARK: - Reconcile: empty store
 
-    @Test func reconcileOnEmptyStoreInsertsAllElevenBuiltIns() async throws {
+    /// The number of bundled built-in sprites, taken from the manifest so these
+    /// tests stay correct as sprites are added or removed (#0078).
+    private var builtInCount: Int { GalleryCoordinator.builtInSpriteNames.count }
+
+    @Test func reconcileOnEmptyStoreInsertsAllBuiltIns() async throws {
         let context = try makeContext()
         let coordinator = try makeCoordinator()
         coordinator.configure(modelContext: context)
 
         let result = await coordinator.reconcileBuiltInSpritesIfNeeded()
-        #expect(result.inserted == 11, "An empty store should get all 11 built-in sprites")
+        #expect(result.inserted == builtInCount, "An empty store should get all built-in sprites")
         #expect(result.updated == 0, "A fresh empty store has nothing to update")
 
         let items = try context.fetch(FetchDescriptor<GalleryItem>())
-        #expect(items.count == 11)
+        #expect(items.count == builtInCount)
         #expect(items.allSatisfy { $0.isBuiltIn }, "Every reconciled item must be flagged isBuiltIn")
         #expect(items.allSatisfy { $0.originalWidth == 45 && $0.originalHeight == 35 },
                 "Built-in sprites are 45×35")
@@ -108,13 +112,13 @@ import UniformTypeIdentifiers
         coordinator.configure(modelContext: context)
 
         let first = await coordinator.reconcileBuiltInSpritesIfNeeded()
-        #expect(first == BuiltInReconcileResult(inserted: 11, updated: 0))
+        #expect(first == BuiltInReconcileResult(inserted: builtInCount, updated: 0))
 
         let second = await coordinator.reconcileBuiltInSpritesIfNeeded()
         #expect(second == BuiltInReconcileResult(), "A second reconcile with all sprites present must insert or update nothing")
 
         let items = try context.fetch(FetchDescriptor<GalleryItem>())
-        #expect(items.count == 11, "Repeated reconcile must never create duplicates")
+        #expect(items.count == builtInCount, "Repeated reconcile must never create duplicates")
         let names = items.map(\.originalName)
         #expect(Set(names).count == names.count, "No duplicate names")
     }
@@ -128,7 +132,7 @@ import UniformTypeIdentifiers
 
         _ = await coordinator.reconcileBuiltInSpritesIfNeeded()
         var items = try context.fetch(FetchDescriptor<GalleryItem>())
-        #expect(items.count == 11)
+        #expect(items.count == builtInCount)
 
         // Simulate a damaged store: remove 4 built-ins directly via the
         // context, bypassing the coordinator's delete guard entirely.
@@ -138,13 +142,13 @@ import UniformTypeIdentifiers
         try context.save()
 
         items = try context.fetch(FetchDescriptor<GalleryItem>())
-        #expect(items.count == 7)
+        #expect(items.count == builtInCount - 4)
 
         let reinserted = await coordinator.reconcileBuiltInSpritesIfNeeded()
         #expect(reinserted == BuiltInReconcileResult(inserted: 4, updated: 0), "Reconcile should insert exactly the 4 missing sprites")
 
         items = try context.fetch(FetchDescriptor<GalleryItem>())
-        #expect(items.count == 11, "Total should be back to 11")
+        #expect(items.count == builtInCount, "Total should be back to the full built-in count")
         let names = items.map(\.originalName)
         #expect(Set(names).count == names.count, "No duplicate names after re-insertion")
     }
@@ -160,10 +164,10 @@ import UniformTypeIdentifiers
         try await coordinator.createGalleryItem(name: "My Photo", imageData: userPNG)
 
         let inserted = await coordinator.reconcileBuiltInSpritesIfNeeded()
-        #expect(inserted == BuiltInReconcileResult(inserted: 11, updated: 0))
+        #expect(inserted == BuiltInReconcileResult(inserted: builtInCount, updated: 0))
 
         let items = try context.fetch(FetchDescriptor<GalleryItem>())
-        #expect(items.count == 12, "The user item plus 11 built-ins")
+        #expect(items.count == builtInCount + 1, "The user item plus all built-ins")
 
         let userItem = try #require(items.first { $0.originalName == "My Photo" })
         #expect(!userItem.isBuiltIn, "The user's item must remain unflagged")
@@ -172,7 +176,7 @@ import UniformTypeIdentifiers
         let second = await coordinator.reconcileBuiltInSpritesIfNeeded()
         #expect(second == BuiltInReconcileResult())
         let itemsAfter = try context.fetch(FetchDescriptor<GalleryItem>())
-        #expect(itemsAfter.count == 12, "Reconcile must never delete the user's item")
+        #expect(itemsAfter.count == builtInCount + 1, "Reconcile must never delete the user's item")
     }
 
     // MARK: - Hash-collision insert: identical bytes must not suppress a built-in
@@ -191,11 +195,11 @@ import UniformTypeIdentifiers
         #expect(coordinator.importMessage == nil)
 
         let inserted = await coordinator.reconcileBuiltInSpritesIfNeeded()
-        #expect(inserted == BuiltInReconcileResult(inserted: 11, updated: 0), "The dup-check bypass must let all 11 built-ins insert regardless")
+        #expect(inserted == BuiltInReconcileResult(inserted: builtInCount, updated: 0), "The dup-check bypass must let all built-ins insert regardless")
         #expect(coordinator.importMessage == nil, "Reconcile must never surface the duplicate-import message")
 
         let items = try context.fetch(FetchDescriptor<GalleryItem>())
-        #expect(items.count == 12, "The user's item plus all 11 built-ins, including the built-in 'Coin'")
+        #expect(items.count == builtInCount + 1, "The user's item plus all built-ins, including the built-in 'Coin'")
         #expect(items.contains { $0.originalName == "Coin" && $0.isBuiltIn })
         #expect(items.contains { $0.originalName == "Weird Coin" && !$0.isBuiltIn })
     }
@@ -227,7 +231,7 @@ import UniformTypeIdentifiers
         #expect(result == BuiltInReconcileResult(inserted: 0, updated: 1))
 
         let itemsAfter = try context.fetch(FetchDescriptor<GalleryItem>())
-        #expect(itemsAfter.count == 11, "Updating must not re-insert or duplicate")
+        #expect(itemsAfter.count == builtInCount, "Updating must not re-insert or duplicate")
         let updatedCoin = try #require(itemsAfter.first { $0.originalName == "Coin" })
         #expect(updatedCoin.id == originalID, "The same GalleryItem instance/id must be preserved")
 
@@ -278,7 +282,7 @@ import UniformTypeIdentifiers
 
         _ = await coordinator.reconcileBuiltInSpritesIfNeeded()
         var items = try context.fetch(FetchDescriptor<GalleryItem>())
-        #expect(items.count == 11)
+        #expect(items.count == builtInCount)
 
         // Damaged-store simulation: remove 2 built-ins directly via the context.
         for item in items.prefix(2) {
@@ -302,7 +306,7 @@ import UniformTypeIdentifiers
         #expect(result == BuiltInReconcileResult(inserted: 2, updated: 1))
 
         items = try context.fetch(FetchDescriptor<GalleryItem>())
-        #expect(items.count == 11, "Total should be back to 11: 2 re-inserted, 1 updated in place")
+        #expect(items.count == builtInCount, "Total should be back to full count: 2 re-inserted, 1 updated in place")
     }
 
     @Test func reconcileUpdateLeavesUserItemsUntouched() async throws {
@@ -382,19 +386,19 @@ import UniformTypeIdentifiers
         _ = await coordinator.reconcileBuiltInSpritesIfNeeded()
 
         var items = try context.fetch(FetchDescriptor<GalleryItem>())
-        #expect(items.count == 12)
+        #expect(items.count == builtInCount + 1)
 
         let builtIn = try #require(items.first { $0.isBuiltIn })
         coordinator.deleteGalleryItem(builtIn)
 
         items = try context.fetch(FetchDescriptor<GalleryItem>())
-        #expect(items.count == 12, "Deleting a built-in must be a refused no-op")
+        #expect(items.count == builtInCount + 1, "Deleting a built-in must be a refused no-op")
 
         let userItem = try #require(items.first { !$0.isBuiltIn })
         coordinator.deleteGalleryItem(userItem)
 
         items = try context.fetch(FetchDescriptor<GalleryItem>())
-        #expect(items.count == 11, "Deleting a user item must succeed")
+        #expect(items.count == builtInCount, "Deleting a user item must succeed")
         #expect(items.allSatisfy { $0.isBuiltIn }, "Only built-ins should remain")
     }
 

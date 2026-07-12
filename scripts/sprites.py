@@ -26,8 +26,12 @@ P = (168, 80, 224)
 S = (200, 200, 200)   # silver/steel
 D = (96, 96, 96)      # dark grey
 F = (240, 176, 128)   # flesh
+N = (150, 82, 45)     # brown (hair, mustache, shoes, shells)
+I = (244, 168, 200)   # pink (dresses)
+T = (240, 208, 120)   # tan (Bowser's belly/snout)
 
-BG = (12, 12, 20)     # near-black background for the wall
+BG = (0, 0, 0)        # full black = transparent on FT, so lower layers show
+                      # through the padding/negative space around each sprite
 
 
 def grid(rows):
@@ -38,7 +42,7 @@ def grid(rows):
 LEGEND = {
     '.': _, 'k': K, 'w': WH_, 'r': R, 'g': G, 'b': B,
     'y': Y, 'c': C, 'm': M, 'o': O, 'p': P, 's': S,
-    'd': D, 'f': F,
+    'd': D, 'f': F, 'n': N, 'i': I, 't': T,
 }
 
 
@@ -200,6 +204,158 @@ sprites["frog"] = grid([
     "gg.ggg.gg",
     "g.gg.gg.g",
     ".g.....g.",
+])
+
+# --- Space Invaders squid (top alien) ---
+sprites["squid"] = grid([
+    "...cc...",
+    "..cccc..",
+    ".cccccc.",
+    "cc.cc.cc",
+    "cccccccc",
+    "..c..c..",
+    ".c.cc.c.",
+    "c.c..c.c",
+])
+
+# --- Space Invaders octopus (bottom alien) ---
+sprites["octopus"] = grid([
+    "..ppppppp..",
+    ".ppppppppp.",
+    "ppppppppppp",
+    "pp.ppppp.pp",
+    "ppppppppppp",
+    ".pp.ppp.pp.",
+    "..pp...pp..",
+    ".pp.....pp.",
+])
+
+# --- Space Invaders mystery ship (UFO) ---
+sprites["ufo"] = grid([
+    "...rrrrr...",
+    "..rrrrrrr..",
+    ".rrrrrrrrr.",
+    "rr.r.r.r.rr",
+    "rrrrrrrrrrr",
+    "..r.....r..",
+])
+
+# --- Donkey Kong barrel ---
+# Rounded cask: orange wood staves with two dark hoop bands near the ends and a
+# lighter highlight down the belly. The rounded top/bottom rows give the barrel
+# its bulge instead of reading as a flat crate.
+sprites["barrel"] = grid([
+    "..ooooo..",
+    ".ooooooo.",
+    "ddddddddd",
+    "oyoooooyo",
+    "oyoooooyo",
+    "ddddddddd",
+    ".ooooooo.",
+    "..ooooo..",
+])
+
+# --- Bomberman bomb ---
+# Body is dark grey ('d'), not black ('k'): pure black (0,0,0) is transparent
+# on FT layers, so a black body would drop out and leave only the background
+# showing. Dark grey stays visible while still reading as a bomb.
+sprites["bomb"] = grid([
+    "......y..",
+    ".....o...",
+    "....o....",
+    "..ddddd..",
+    ".ddddddd.",
+    "ddwdddddd",
+    "ddddddddd",
+    ".ddddddd.",
+    "..ddddd..",
+])
+
+# --- Pac-Man cherries ---
+sprites["cherry"] = grid([
+    "...gg...",
+    "..g.g...",
+    ".g...g..",
+    ".g...g..",
+    ".g...g..",
+    "rrr.rrr.",
+    "wrr.wrr.",
+    "rrr.rrr.",
+    ".r...r..",
+])
+
+# --- Dungeon key ---
+sprites["key"] = grid([
+    ".yyy...",
+    "y...y..",
+    "y...y..",
+    ".yyy...",
+    "..y....",
+    "..y....",
+    "..yy...",
+    "..y....",
+    "..yyy..",
+])
+
+# --- Mario (red hat/shirt, blue overalls, brown hair/mustache/shoes) ---
+_mario_rows = [
+    "...rrrrrr....",
+    "..rrrrrrrr...",
+    "..nnnfffnf...",
+    ".nnfffkffn...",
+    ".nfffffnf....",
+    ".nffnnnff....",
+    "..fffffff....",
+    "..rrbrbrr....",
+    ".rrrbrbrrr...",
+    ".ffrbbbrff...",
+    ".ffrbybrff...",
+    ".rrbbbbbbr...",
+    "..bb...bb....",
+    ".nnn...nnn...",
+    ".nnn...nnn...",
+]
+sprites["mario"] = grid(_mario_rows)
+
+# --- Luigi: Mario's palette swap (red -> green) ---
+sprites["luigi"] = grid([row.replace("r", "g") for row in _mario_rows])
+
+# --- Princess (Peach): crown, blonde hair, blue eyes, pink dress ---
+sprites["princess"] = grid([
+    "...y.y.y.....",
+    "...yyryy.....",
+    "..yyyyyyy....",
+    "..yyfffyyy...",
+    ".yyffffffy...",
+    ".yffbffbfy...",
+    ".yffffffy....",
+    ".yyfffffy....",
+    "..yyfffy.....",
+    "...ffff......",
+    "..iiiiii.....",
+    ".iiiiiiii....",
+    ".iiiiiiii....",
+    "iiiiiiiiii...",
+    "iiiiiiiiii...",
+    "iiiiiiiiiii..",
+])
+
+# --- Bowser: green head, red mane, horns, fangs, spiky shell ---
+sprites["bowser"] = grid([
+    "..w.........w..",
+    "..ww.......ww..",
+    ".wwwgrrrrrgwww.",
+    ".ggggrrrrrgggg.",
+    "gggggrrrrrggggg",
+    "gggkgggggggkggg",
+    "ggggggggggggggg",
+    ".gggtttttttggg.",
+    ".ggtwkwkwkwtgg.",
+    ".gggtttttttggg.",
+    ".oogggggggggoo.",
+    ".oogggggggggoo.",
+    "..o.ggggggg.o..",
+    "..ooo.....ooo..",
 ])
 
 def main():

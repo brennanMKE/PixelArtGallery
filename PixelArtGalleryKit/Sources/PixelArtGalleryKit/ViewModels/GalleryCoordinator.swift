@@ -59,8 +59,9 @@ final class GalleryCoordinator {
     /// ("coin" → "Coin"). Order here is the order sprites are reconciled and,
     /// absent any pinning, the order they appear in the Sprites section.
     static let builtInSpriteNames = [
-        "coin", "frog", "ghost", "heart", "invader",
-        "mushroom", "pacman", "robot", "ship", "skull", "star",
+        "barrel", "bomb", "bowser", "cherry", "coin", "frog", "ghost",
+        "heart", "invader", "key", "luigi", "mario", "mushroom", "octopus",
+        "pacman", "princess", "robot", "ship", "skull", "squid", "star", "ufo",
     ]
 
     /// Load a bundled built-in sprite's raw PNG bytes by its manifest `name`
