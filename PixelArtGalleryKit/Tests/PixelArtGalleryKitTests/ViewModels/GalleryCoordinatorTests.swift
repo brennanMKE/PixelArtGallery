@@ -459,6 +459,157 @@ import UniformTypeIdentifiers
         #expect(item.variants.count == 2)
     }
 
+    // MARK: - Transient fitted preview + cache + save-to-variant (#0066)
+
+    /// A 16×16 source into a non-square 64×32 display must produce a
+    /// preview sized to the *fit* dimensions (32×32), not the raw display
+    /// dimensions — and, unlike `createFittedVariant`, must not persist a
+    /// `Variant` as a side effect of merely computing the preview.
+    @Test func fittedPreviewReturnsFitDimensionsAndDoesNotPersist() async throws {
+        let context = try makeContext()
+        let coordinator = try makeCoordinator()
+        coordinator.configure(modelContext: context)
+
+        let display = FlaschenTaschenDisplay(
+            host: "10.0.0.10", port: 1337, displayName: "Wide Wall",
+            displayWidth: 64, displayHeight: 32
+        )
+        context.insert(display)
+        try context.save()
+
+        let item = try await makeItem(in: context, coordinator: coordinator)
+
+        let preview = try await coordinator.fittedPreview(for: item, display: display)
+
+        #expect(preview.width == 32, "16x16 source into 64x32 display should fit to 32x32, not 64x32")
+        #expect(preview.height == 32)
+        #expect(preview.offsetX == 16, "Centering a 32-wide fit on a 64-wide display offsets by 16")
+        #expect(preview.offsetY == 0, "A 32-tall fit on a 32-tall display needs no vertical offset")
+        #expect(preview.pixelGridData.count == 32 * 32 * 4)
+        #expect(preview.itemID == item.id)
+        #expect(preview.displayID == display.id)
+
+        #expect(item.variants.isEmpty, "Computing a preview must not attach a Variant to the item")
+        let variants = try context.fetch(FetchDescriptor<Variant>())
+        #expect(variants.isEmpty, "Computing a preview must not persist any Variant")
+    }
+
+    /// Re-invoking `fittedPreview` for the same item + display should hit the
+    /// in-memory cache rather than reload/re-pixelate. Proven by deleting the
+    /// stored original bytes between calls: a cache miss would have to reload
+    /// the now-missing file and throw, so success on the second call *is* the
+    /// proof no re-pixelation occurred.
+    @Test func fittedPreviewCacheHitAvoidsRecomputation() async throws {
+        let context = try makeContext()
+        let coordinator = try makeCoordinator()
+        coordinator.configure(modelContext: context)
+
+        let display = FlaschenTaschenDisplay(
+            host: "10.0.0.11", port: 1337, displayName: "Cache Wall",
+            displayWidth: 64, displayHeight: 32
+        )
+        context.insert(display)
+        try context.save()
+
+        let item = try await makeItem(in: context, coordinator: coordinator)
+
+        let first = try await coordinator.fittedPreview(for: item, display: display)
+
+        // Delete the on-disk original so a real cache miss would fail.
+        let originalFileURL = tempDirectory.appendingPathComponent(item.originalImagePath)
+        try FileManager.default.removeItem(at: originalFileURL)
+
+        let second = try await coordinator.fittedPreview(for: item, display: display)
+        #expect(second == first, "A cache hit must return an equal preview without touching disk")
+    }
+
+    /// `saveVariant(from:)` persists a transient preview exactly once, with
+    /// the right dimensions/offset/association, and dedups a repeat save of
+    /// the same preview rather than creating a duplicate.
+    @Test func saveVariantPersistsPreviewExactlyOnceAndDedups() async throws {
+        let context = try makeContext()
+        let coordinator = try makeCoordinator()
+        coordinator.configure(modelContext: context)
+
+        let display = FlaschenTaschenDisplay(
+            host: "10.0.0.12", port: 1337, displayName: "Save Wall",
+            displayWidth: 64, displayHeight: 32
+        )
+        context.insert(display)
+        try context.save()
+
+        let item = try await makeItem(in: context, coordinator: coordinator)
+        let preview = try await coordinator.fittedPreview(for: item, display: display)
+
+        let saved = try coordinator.saveVariant(from: preview)
+
+        #expect(saved.targetWidth == preview.width)
+        #expect(saved.targetHeight == preview.height)
+        #expect(saved.pixelGridData == preview.pixelGridData)
+        #expect(saved.associatedDisplayId == preview.displayID)
+        #expect(item.variants.contains(where: { $0.id == saved.id }))
+
+        let variants = try context.fetch(FetchDescriptor<Variant>())
+        #expect(variants.count == 1)
+
+        // Re-saving the same preview must dedup, not create a second Variant.
+        let savedAgain = try coordinator.saveVariant(from: preview)
+        #expect(savedAgain.id == saved.id, "Re-saving the same preview must reuse the existing variant")
+
+        let variantsAfter = try context.fetch(FetchDescriptor<Variant>())
+        #expect(variantsAfter.count == 1, "Dedup must not add a second variant")
+    }
+
+    // MARK: - Last-used display persistence (#0066)
+
+    /// Builds a coordinator whose `UserDefaults` is an isolated suite (not
+    /// `.standard`), returning both the coordinator and the suite name so the
+    /// test can clean it up afterward.
+    private func makeCoordinatorWithIsolatedDefaults() throws -> (coordinator: GalleryCoordinator, suiteName: String) {
+        let suiteName = "FittedPreviewTests-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        let coordinator = GalleryCoordinator(
+            fileStorage: try FileStorageManager(imageDirectory: tempDirectory),
+            defaults: defaults
+        )
+        return (coordinator, suiteName)
+    }
+
+    @Test func lastUsedDisplayRoundTripsAndFallsBack() throws {
+        let (coordinator, suiteName) = try makeCoordinatorWithIsolatedDefaults()
+        defer { UserDefaults.standard.removePersistentDomain(forName: suiteName) }
+
+        let displayA = FlaschenTaschenDisplay(
+            host: "10.0.0.20", port: 1337, displayName: "Wall A",
+            displayWidth: 64, displayHeight: 32
+        )
+        let displayB = FlaschenTaschenDisplay(
+            host: "10.0.0.21", port: 1337, displayName: "Wall B",
+            displayWidth: 45, displayHeight: 35
+        )
+        let defaultDisplay = FlaschenTaschenDisplay(
+            host: "flaschentaschen.local", port: 1337, displayName: "Default",
+            displayWidth: 45, displayHeight: 35, source: FlaschenTaschenDisplay.defaultSource
+        )
+
+        // Nothing stored yet: falls back to the defaultSource candidate.
+        #expect(coordinator.resolveLastUsedDisplay(among: [displayA, defaultDisplay]) === defaultDisplay)
+
+        // With no defaultSource candidate present, falls back to the first.
+        #expect(coordinator.resolveLastUsedDisplay(among: [displayA, displayB]) === displayA)
+
+        // Empty candidates -> nil.
+        #expect(coordinator.resolveLastUsedDisplay(among: []) == nil)
+
+        // Round trip: remember B, then resolve returns B even with a
+        // defaultSource candidate also present.
+        coordinator.rememberLastUsedDisplay(displayB)
+        #expect(coordinator.resolveLastUsedDisplay(among: [displayA, displayB, defaultDisplay]) === displayB)
+
+        // A stored id no longer among the candidates falls back the same way.
+        #expect(coordinator.resolveLastUsedDisplay(among: [displayA, defaultDisplay]) === defaultDisplay)
+    }
+
     // MARK: - Helpers
 
     private static func makePNGData(width: Int, height: Int) throws -> Data {

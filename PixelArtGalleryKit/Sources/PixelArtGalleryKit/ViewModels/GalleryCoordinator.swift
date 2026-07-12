@@ -22,6 +22,9 @@ nonisolated enum GalleryCoordinatorError: LocalizedError, Equatable {
     case missingModelContext
     /// The original image bytes for a gallery item could not be found on disk.
     case originalImageMissing(String)
+    /// A ``FittedPreview`` referenced a `GalleryItem` id that could no longer
+    /// be found (e.g. deleted between preview and save; #0066).
+    case galleryItemNotFound(UUID)
 
     var errorDescription: String? {
         switch self {
@@ -29,6 +32,8 @@ nonisolated enum GalleryCoordinatorError: LocalizedError, Equatable {
             return "No data context is available to save changes."
         case .originalImageMissing(let path):
             return "The original image could not be found on disk: \(path)"
+        case .galleryItemNotFound(let id):
+            return "The gallery item for this preview could not be found: \(id)"
         }
     }
 }
@@ -50,6 +55,25 @@ final class GalleryCoordinator {
     /// init. `@ObservationIgnored` because it is an implementation detail.
     @ObservationIgnored private var fileStorage: FileStorageManager?
 
+    /// `UserDefaults` store backing last-used-display persistence (#0066).
+    /// Injected (default `.standard`) so tests can point it at an isolated
+    /// suite rather than polluting the real user defaults. `@ObservationIgnored`
+    /// because it is an implementation detail.
+    @ObservationIgnored private let defaults: UserDefaults
+
+    /// The `UserDefaults` key storing the last-used FT display's `id`
+    /// (as a `String` UUID). See ``rememberLastUsedDisplay(_:)`` /
+    /// ``resolveLastUsedDisplay(among:)``.
+    static let lastUsedDisplayIDKey = "lastUsedFTDisplayID"
+
+    /// In-memory cache of computed ``FittedPreview`` values, keyed by
+    /// ``FittedPreviewCacheKey`` so re-selecting a display for an item is
+    /// instant and never re-pixelates. Never persisted; `@ObservationIgnored`
+    /// because it is an implementation detail that must not invalidate views
+    /// (same as ``modelContext``/``fileStorage``). Memory cost is negligible
+    /// (a 45×35 preview is ~6 KB), so no size cap is needed.
+    @ObservationIgnored private var previewCache: [FittedPreviewCacheKey: FittedPreview] = [:]
+
     var selectedItem: GalleryItem?
     var selectedVariant: Variant?
     var isImporting = false
@@ -63,12 +87,17 @@ final class GalleryCoordinator {
     /// The UI shows it and clears it; unlike ``currentError`` it is informational.
     var importMessage: String?
 
-    /// - Parameter fileStorage: Optional pre-built file store. Production code
-    ///   passes nothing and the store is created lazily against the default
-    ///   Application Support location; tests inject one pointed at a temporary
-    ///   directory so they never write into the user's real gallery storage.
-    init(fileStorage: FileStorageManager? = nil) {
+    /// - Parameters:
+    ///   - fileStorage: Optional pre-built file store. Production code passes
+    ///     nothing and the store is created lazily against the default
+    ///     Application Support location; tests inject one pointed at a temporary
+    ///     directory so they never write into the user's real gallery storage.
+    ///   - defaults: `UserDefaults` store for last-used-display persistence
+    ///     (#0066). Production code passes nothing (`.standard`); tests inject
+    ///     an isolated suite so `.standard` is never polluted.
+    init(fileStorage: FileStorageManager? = nil, defaults: UserDefaults = .standard) {
         self.fileStorage = fileStorage
+        self.defaults = defaults
     }
 
     /// Inject the SwiftData context the coordinator should mutate.
@@ -267,32 +296,158 @@ final class GalleryCoordinator {
         }
     }
 
-    /// Create (or reuse) a variant fitted to a Flaschen Taschen display's
-    /// dimensions, aspect-preserving, for the display-first flow (#0061/#0063).
+    /// Compute (or reuse from cache) a transient, aspect-fit preview of an
+    /// item for a display, without persisting anything (#0066).
     ///
-    /// Computes the largest same-aspect-ratio size of the item's original
-    /// image that fits inside `display`'s geometry via ``AspectFit/fit(sourceWidth:sourceHeight:displayWidth:displayHeight:)``,
-    /// then either reuses an existing variant already sized to that fit (see
-    /// dedup below) or creates a new one through ``createVariant(for:width:height:associatedDisplayId:)``.
+    /// Unlike ``createFittedVariant(for:display:)`` this never inserts or
+    /// saves a ``Variant`` — it exists so the popover flow ([#0067](0067.md))
+    /// can show the fitted pixelation the moment a display is selected, and
+    /// only an explicit ``saveVariant(from:)`` call turns it into a persisted
+    /// record.
     ///
-    /// **Dedup key**: `associatedDisplayId == display.id && targetWidth ==
-    /// fitWidth && targetHeight == fitHeight`. Display id alone is not enough —
-    /// a display's geometry can change in place (mDNS re-scan, manual edit),
-    /// so an older variant tagged with the same display at different (e.g.
-    /// raw, un-fitted) dimensions must not be mistaken for a fitted match. When
-    /// several matches exist (shouldn't normally happen), the most recently
-    /// created one is returned, for determinism. Re-selecting the same display
-    /// is intentionally a no-op — it never re-runs the engine or touches
-    /// existing pixel data, since that would silently discard any edits the
-    /// user made to the grid. Explicit regeneration already exists via
-    /// ``updateVariantDimensions(_:width:height:)``.
+    /// Cache lookup happens first, keyed by ``FittedPreviewCacheKey`` (item id
+    /// + display id + display dimensions) — a hit needs no fit math and no
+    /// I/O, so it returns instantly. On a miss, the original bytes are loaded
+    /// and pixelated via ``PixelationEngine/processFitting(imageData:displayWidth:displayHeight:)``,
+    /// which computes the fit from the *decoded, EXIF-upright* image
+    /// dimensions rather than the item's stored `originalWidth`/`originalHeight`
+    /// (those come from a raw, non-EXIF-transformed decode at import time and
+    /// can disagree with the pixels for a rotated photo — see #0066's plan).
+    /// This also gives `processFitting` its first production caller,
+    /// retiring the dead-code concern raised in #0062.
+    /// - Parameters:
+    ///   - item: The gallery item to fit and pixelate.
+    ///   - display: The Flaschen Taschen display whose geometry the source
+    ///     should be fit into.
+    /// - Returns: The transient ``FittedPreview``, from cache or freshly computed.
+    func fittedPreview(
+        for item: GalleryItem,
+        display: FlaschenTaschenDisplay
+    ) async throws -> FittedPreview {
+        let key = FittedPreviewCacheKey(
+            itemID: item.id, displayID: display.id,
+            displayWidth: display.displayWidth, displayHeight: display.displayHeight
+        )
+        if let cached = previewCache[key] {
+            return cached
+        }
+
+        do {
+            let storage = try fileStorageManager()
+            guard let imageData = try await storage.load(filename: item.originalImagePath) else {
+                throw GalleryCoordinatorError.originalImageMissing(item.originalImagePath)
+            }
+
+            let pixelationEngine = PixelationEngine()
+            let (grid, placement) = try await pixelationEngine.processFitting(
+                imageData: imageData,
+                displayWidth: display.displayWidth,
+                displayHeight: display.displayHeight
+            )
+
+            let preview = FittedPreview(
+                itemID: item.id,
+                displayID: display.id,
+                width: placement.width,
+                height: placement.height,
+                pixelGridData: grid.toRGBA8888(),
+                offsetX: placement.offsetX,
+                offsetY: placement.offsetY
+            )
+            previewCache[key] = preview
+
+            AppLog.variant.info(
+                "Computed fitted preview for '\(item.originalName, privacy: .public)' at \(placement.width)×\(placement.height) for display \(display.id)"
+            )
+            return preview
+        } catch {
+            currentError = error.localizedDescription
+            AppLog.variant.error("Failed to compute fitted preview for '\(item.originalName, privacy: .public)': \(error.localizedDescription, privacy: .public)")
+            throw error
+        }
+    }
+
+    /// Persist a transient ``FittedPreview`` as a saved ``Variant`` (#0066).
     ///
-    /// Pixelating at the fit dimensions via the existing ``createVariant(for:width:height:associatedDisplayId:)``
-    /// (which calls `PixelationEngine.process`) is aspect-preserving by
-    /// construction — the fit width/height already match the source's aspect
-    /// ratio, so a plain resize is distortion-free. `PixelationEngine.processFitting`
-    /// is not needed here: the fit dimensions must be known up front (before
-    /// pixelation) to perform the dedup check.
+    /// Re-locates the `GalleryItem` the preview was computed for (it may have
+    /// been evicted from any in-memory reference the caller held), dedups
+    /// against the item's existing variants, and otherwise creates and
+    /// attaches a new `Variant` built directly from the preview's already-
+    /// computed pixel data — no re-pixelation.
+    ///
+    /// **Dedup key** (moved verbatim from #0063's `createFittedVariant`):
+    /// `associatedDisplayId == preview.displayID && targetWidth == preview.width
+    /// && targetHeight == preview.height`. When several matches exist
+    /// (shouldn't normally happen), the most recently created one is returned,
+    /// for determinism. Re-saving the same preview is intentionally a no-op —
+    /// it never touches existing pixel data, since that would silently
+    /// discard any edits the user made to the grid. Explicit regeneration
+    /// already exists via ``updateVariantDimensions(_:width:height:)``.
+    /// - Parameter preview: A ``FittedPreview`` previously returned by
+    ///   ``fittedPreview(for:display:)``.
+    /// - Returns: The persisted ``Variant``, either newly created or an
+    ///   existing match reused as-is.
+    @discardableResult
+    func saveVariant(from preview: FittedPreview) throws -> Variant {
+        guard let modelContext else {
+            AppLog.variant.error("saveVariant called before a ModelContext was configured")
+            throw GalleryCoordinatorError.missingModelContext
+        }
+
+        do {
+            let itemID = preview.itemID
+            var descriptor = FetchDescriptor<GalleryItem>(
+                predicate: #Predicate { $0.id == itemID }
+            )
+            descriptor.fetchLimit = 1
+            guard let item = try modelContext.fetch(descriptor).first else {
+                throw GalleryCoordinatorError.galleryItemNotFound(itemID)
+            }
+
+            let existingMatches = item.variants.filter {
+                $0.associatedDisplayId == preview.displayID
+                    && $0.targetWidth == preview.width
+                    && $0.targetHeight == preview.height
+            }
+            if let reuse = existingMatches.max(by: { $0.createdDate < $1.createdDate }) {
+                AppLog.variant.info(
+                    "Reusing saved variant \(reuse.id) for '\(item.originalName, privacy: .public)' at \(preview.width)×\(preview.height) for display \(preview.displayID)"
+                )
+                return reuse
+            }
+
+            let variant = Variant(
+                targetWidth: preview.width,
+                targetHeight: preview.height,
+                pixelGridData: preview.pixelGridData,
+                associatedDisplayId: preview.displayID
+            )
+            variant.galleryItem = item
+            item.variants.append(variant)
+
+            modelContext.insert(variant)
+            try modelContext.save()
+
+            AppLog.variant.info(
+                "Saved variant for '\(item.originalName, privacy: .public)' at \(preview.width)×\(preview.height) for display \(preview.displayID)"
+            )
+            return variant
+        } catch {
+            currentError = error.localizedDescription
+            AppLog.variant.error("Failed to save variant from preview: \(error.localizedDescription, privacy: .public)")
+            throw error
+        }
+    }
+
+    /// Legacy always-persist path (#0063): compute a fitted preview and
+    /// immediately save it as a `Variant`.
+    ///
+    /// Superseded by ``fittedPreview(for:display:)`` + ``saveVariant(from:)``
+    /// for the popover flow (#0066/#0067), which separates "compute a preview"
+    /// from "the user chose to save it". Kept as a thin wrapper so
+    /// `DisplaySendPickerView`, its sole remaining production call site,
+    /// keeps compiling with identical observable behavior until that view (and
+    /// this wrapper) are retired in #0068.
     /// - Parameters:
     ///   - item: The gallery item to fit and pixelate.
     ///   - display: The Flaschen Taschen display whose geometry the source
@@ -304,62 +459,8 @@ final class GalleryCoordinator {
         for item: GalleryItem,
         display: FlaschenTaschenDisplay
     ) async throws -> Variant {
-        guard let modelContext else {
-            AppLog.variant.error("createFittedVariant called before a ModelContext was configured")
-            throw GalleryCoordinatorError.missingModelContext
-        }
-
-        do {
-            // Determine source dimensions without decoding when possible.
-            // Import sets originalWidth/Height to 0 when decode failed at
-            // import time (see createGalleryItem), so fall back to decoding
-            // the stored original bytes in that degenerate case.
-            var sourceWidth = item.originalWidth
-            var sourceHeight = item.originalHeight
-            if sourceWidth <= 0 || sourceHeight <= 0 {
-                let storage = try fileStorageManager()
-                guard let imageData = try await storage.load(filename: item.originalImagePath),
-                      let cgImage = try? loadImage(from: imageData) else {
-                    throw GalleryCoordinatorError.originalImageMissing(item.originalImagePath)
-                }
-                sourceWidth = cgImage.width
-                sourceHeight = cgImage.height
-            }
-
-            let fit = AspectFit.fit(
-                sourceWidth: sourceWidth, sourceHeight: sourceHeight,
-                displayWidth: display.displayWidth, displayHeight: display.displayHeight
-            )
-
-            // Dedup before any pixelation I/O: reuse an existing fitted variant
-            // for this exact display + fit-dimension pairing rather than
-            // creating a duplicate.
-            let existingMatches = item.variants.filter {
-                $0.associatedDisplayId == display.id
-                    && $0.targetWidth == fit.width
-                    && $0.targetHeight == fit.height
-            }
-            if let reuse = existingMatches.max(by: { $0.createdDate < $1.createdDate }) {
-                AppLog.variant.info(
-                    "Reusing fitted variant \(reuse.id) for '\(item.originalName, privacy: .public)' at \(fit.width)×\(fit.height) for display \(display.id)"
-                )
-                return reuse
-            }
-
-            AppLog.variant.info(
-                "Creating fitted variant for '\(item.originalName, privacy: .public)' at \(fit.width)×\(fit.height) for display \(display.id)"
-            )
-            return try await createVariant(
-                for: item,
-                width: fit.width,
-                height: fit.height,
-                associatedDisplayId: display.id
-            )
-        } catch {
-            currentError = error.localizedDescription
-            AppLog.variant.error("Failed to create fitted variant for '\(item.originalName, privacy: .public)': \(error.localizedDescription, privacy: .public)")
-            throw error
-        }
+        let preview = try await fittedPreview(for: item, display: display)
+        return try saveVariant(from: preview)
     }
 
     /// Duplicate an existing variant within the same gallery item.
@@ -799,11 +900,21 @@ final class GalleryCoordinator {
         modelContext.delete(item)
         do {
             try modelContext.save()
+            invalidatePreviews(forItemID: id)
             AppLog.gallery.info("Deleted gallery item: \(id)")
         } catch {
             currentError = error.localizedDescription
             AppLog.gallery.error("Failed to delete gallery item \(id): \(error.localizedDescription, privacy: .public)")
         }
+    }
+
+    /// Strip any cached ``FittedPreview`` entries for a deleted item (#0066).
+    ///
+    /// Display-geometry changes need no equivalent hook because display
+    /// dimensions are already part of ``FittedPreviewCacheKey`` — stale
+    /// entries there simply become unreachable, not wrong.
+    private func invalidatePreviews(forItemID itemID: UUID) {
+        previewCache = previewCache.filter { $0.key.itemID != itemID }
     }
 
     /// Delete a variant, removing it from the SwiftData context.
@@ -826,5 +937,40 @@ final class GalleryCoordinator {
             currentError = error.localizedDescription
             AppLog.variant.error("Failed to delete variant \(id): \(error.localizedDescription, privacy: .public)")
         }
+    }
+
+    // MARK: - Last-used display (#0066)
+
+    /// Remember `display` as the last one the user selected or sent to, so the
+    /// popover flow ([#0067](0067.md)) can default its dropdown to it next time.
+    ///
+    /// Plain `UserDefaults`, not `@AppStorage` — `@AppStorage` is a SwiftUI
+    /// dynamic property that only functions inside `View`s; hosted on this
+    /// `@Observable` class it would neither observe nor publish correctly.
+    /// Putting the logic here (rather than in the popover view) makes the
+    /// default-selection rule unit-testable without SwiftUI and shared across
+    /// the iOS/macOS popovers.
+    func rememberLastUsedDisplay(_ display: FlaschenTaschenDisplay) {
+        defaults.set(display.id.uuidString, forKey: Self.lastUsedDisplayIDKey)
+    }
+
+    /// Resolve the last-used display among `candidates`, with a fallback
+    /// ladder mirroring ``FlaschenTaschenDisplay/preferredSelection(current:variantWidth:variantHeight:among:)``.
+    ///
+    /// Reads the stored id and returns the matching candidate; when the
+    /// stored value is absent, unparseable, or no longer among `candidates`,
+    /// falls back to the candidate with `source == FlaschenTaschenDisplay.defaultSource`,
+    /// else `candidates.first`, else `nil`. Candidates are expected to come
+    /// from the view's `@Query`, so this method does no fetching itself.
+    /// - Parameter candidates: The currently available displays to choose among.
+    /// - Returns: The resolved display, or `nil` if `candidates` is empty.
+    func resolveLastUsedDisplay(among candidates: [FlaschenTaschenDisplay]) -> FlaschenTaschenDisplay? {
+        if let stored = defaults.string(forKey: Self.lastUsedDisplayIDKey),
+           let storedID = UUID(uuidString: stored),
+           let match = candidates.first(where: { $0.id == storedID }) {
+            return match
+        }
+        return candidates.first(where: { $0.source == FlaschenTaschenDisplay.defaultSource })
+            ?? candidates.first
     }
 }
