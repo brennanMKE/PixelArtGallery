@@ -10,6 +10,9 @@ DerivedData/
 # Screenshots
 /Screenshots/
 
+# Sprites
+sprites/
+
 # Swift Package Manager
 .build/
 **/.swiftpm/xcode/package.xcworkspace/xcuserdata/
