@@ -27,16 +27,11 @@ struct VariantDetailView: View {
     /// stored defaults (#0056).
     @State private var sendOffsetX: Int = 0
     @State private var sendOffsetY: Int = 0
-    @State private var isSending = false
-    /// The in-flight send, retained so the user can cancel it by tapping Stop (#0050).
-    @State private var sendTask: Task<Void, Never>?
-    /// The endpoint/geometry/layer/offset last actually *painted* to the
-    /// display. Layer and x/y are read live each frame (#0057), so this is
-    /// updated after every successful paint — not captured once at start —
-    /// which lets `stopSending()` and the #0052 `.onDisappear` path clear
-    /// exactly what is on the display right now, even after a mid-send switch
-    /// to a different layer or offset.
-    @State private var activeSend: FTPaintTarget?
+    /// The continuous-send loop, extracted to ``FTSendController`` (#0067) so
+    /// the same loop (cancellation, mid-send clear-on-change, the #0053
+    /// stop-clear) is shared with the send popover's transient-preview send
+    /// instead of duplicated.
+    @State private var sendController = FTSendController()
     @State private var showExportPicker = false
     @State private var isEditingDimensions = false
     @State private var isConfirmingDelete = false
@@ -48,6 +43,12 @@ struct VariantDetailView: View {
     private var selectedDisplay: FlaschenTaschenDisplay? {
         displays.first { $0.id == selectedDisplayID }
     }
+
+    /// Whether a continuous send is currently in flight — forwarded from
+    /// ``FTSendController`` so the rest of this view's UI logic (banners,
+    /// disabling the display picker, the Send/Stop button label) is
+    /// unchanged by the #0067 extraction.
+    private var isSending: Bool { sendController.isSending }
 
     /// - Parameter centerOnDisplayID: When arriving from the display-first
     ///   picker (#0064), the id of the display the send offset should be
@@ -158,7 +159,7 @@ struct VariantDetailView: View {
             // painted layer with a final black frame (#0053). Sheets presented over
             // this view don't trigger onDisappear, so opening export/edit won't
             // stop a send. The clear runs detached, so it survives view teardown.
-            stopSending()
+            sendController.stop()
         }
     }
 
@@ -395,17 +396,12 @@ struct VariantDetailView: View {
         flashSuccess("Exported \(format) to \(url.lastPathComponent)")
     }
 
-    /// How often the continuous send re-pushes the frame to the display. FT
-    /// servers drop a layer after their layer-timeout (commonly ~15s) if it
-    /// isn't refreshed, so we resend well inside that window to keep the image up.
-    private static let sendRefreshInterval: Duration = .seconds(2)
-
     private func handleSendToDisplay() {
         // Tapping while sending stops the continuous send (#0050) and clears the
         // layer (#0053).
-        if isSending {
+        if sendController.isSending {
             AppLog.ftDiscovery.info("User requested stop of continuous send")
-            stopSending()
+            sendController.stop()
             return
         }
 
@@ -414,114 +410,40 @@ struct VariantDetailView: View {
         // Read the @Model's plain fields on the main actor before handing the
         // value-typed payload to the off-main-actor client. The endpoint and
         // the variant's geometry never change once a send starts — only
-        // layer/x/y are read live, each frame, from @State below (#0057).
+        // layer/x/y are read live, each frame, via `frameOffset` below (#0057).
         let displayName = display.displayName
-        let host = display.host
-        let port = display.port
-        let width = variant.targetWidth
-        let height = variant.targetHeight
-        let pixelGridData = variant.pixelGridData
-        let scaleFactor = variant.scaleFactor
+        let payload = FTSendPayload(
+            host: display.host,
+            port: display.port,
+            width: variant.targetWidth,
+            height: variant.targetHeight,
+            pixelGridData: variant.pixelGridData,
+            scaleFactor: variant.scaleFactor
+        )
 
-        isSending = true
         errorMessage = nil
         successMessage = nil
         infoMessage = nil
 
-        AppLog.ftDiscovery.info("Starting continuous send to \(displayName, privacy: .public) at \(host, privacy: .public):\(port)")
+        AppLog.ftDiscovery.info("Starting continuous send to \(displayName, privacy: .public) at \(payload.host, privacy: .public):\(payload.port)")
 
-        sendTask = Task {
-            defer {
-                isSending = false
-                sendTask = nil
-                // Clear the last-painted target on any loop end (including a
-                // network error that wasn't a user stop) so a later
-                // onDisappear doesn't fire a spurious clear (#0053).
-                activeSend = nil
-            }
-            let client = FTDisplayClient()
-            var frameCount = 0
-            // What was last actually painted (nil until the first frame
-            // succeeds), so a mid-send layer/offset change can be detected
-            // and the old target cleared before painting the new one (#0057).
-            var painted: FTPaintTarget?
-            do {
-                // Keep pushing the frame until the user taps Stop (task cancelled).
-                while !Task.isCancelled {
-                    // Read + clamp the *current* layer/x/y each iteration —
-                    // this is what makes them live-editable during a send.
-                    let layer = FlaschenTaschenDisplay.clampedLayer(sendLayer)
-                    let offsetX = FlaschenTaschenDisplay.clampedOffset(sendOffsetX)
-                    let offsetY = FlaschenTaschenDisplay.clampedOffset(sendOffsetY)
-
-                    if let previous = painted,
-                       previous.requiresClear(beforePaintingLayer: layer, offsetX: offsetX, offsetY: offsetY) {
-                        // The user switched layer/offset since the last frame:
-                        // erase the old target first so nothing is stranded on
-                        // a layer/region we're about to stop refreshing.
-                        await client.sendClearFrame(to: previous)
-                    }
-
-                    try await client.send(
-                        width: width,
-                        height: height,
-                        pixelGridData: pixelGridData,
-                        scaleFactor: scaleFactor,
-                        to: host,
-                        port: port,
-                        offset: (x: offsetX, y: offsetY, z: layer)
-                    )
-                    frameCount += 1
-
-                    let target = FTPaintTarget(
-                        host: host, port: port, width: width, height: height,
-                        scaleFactor: scaleFactor, layer: layer, offsetX: offsetX, offsetY: offsetY
-                    )
-                    painted = target
-                    activeSend = target
-
-                    // Sleeping is a cancellation point, so Stop ends the loop promptly.
-                    try await Task.sleep(for: Self.sendRefreshInterval)
-                }
-            } catch let error as FTDisplayError where error == .cancelled {
-                // User tapped Stop mid-packet — normal exit, fall through below.
-            } catch is CancellationError {
-                // User tapped Stop during the inter-frame sleep — normal exit.
-            } catch {
-                let message = (error as? FTDisplayError)?.errorDescription ?? error.localizedDescription
-                AppLog.ftDiscovery.error("Continuous send failed after \(frameCount) frame(s): \(error.localizedDescription, privacy: .public)")
+        sendController.start(
+            payload: payload,
+            frameOffset: {
+                // Read live each frame — this is what makes layer/x/y stay
+                // editable during a send (#0057). No capture list: this
+                // closure reads `self.sendLayer`/`sendOffsetX`/`sendOffsetY`
+                // through their `@State` storage, not a value snapshotted at
+                // send-start.
+                (layer: sendLayer, offsetX: sendOffsetX, offsetY: sendOffsetY)
+            },
+            onError: { message in
                 flashError(message)
-                return
+            },
+            onStopped: { _ in
+                flashInfo("Stopped sending to \(displayName)")
             }
-            AppLog.ftDiscovery.info("Stopped continuous send to \(displayName, privacy: .public) after \(frameCount) frame(s)")
-            flashInfo("Stopped sending to \(displayName)")
-        }
-    }
-
-    /// Stop the continuous send and clear the painted layer.
-    ///
-    /// Cancels the refresh loop, then sends a final all-black frame to the exact
-    /// endpoint/layer/offset that was last *painted* — which, since layer/x/y are
-    /// now live-editable mid-send (#0057), may differ from what the send started
-    /// with. FlaschenTaschen treats black on any layer above the background as
-    /// transparent, so this erases the overlay immediately instead of waiting for
-    /// the server's layer timeout (#0053). The clear runs in a detached task so it
-    /// completes even as the view is torn down (#0052) and isn't killed by the
-    /// loop's cancellation.
-    private func stopSending() {
-        // Capture before cancelling — the loop's `defer` also nils this out.
-        let clearTarget = activeSend
-        sendTask?.cancel()
-        sendTask = nil
-        isSending = false
-        activeSend = nil
-
-        guard let target = clearTarget else { return }
-        Task.detached {
-            let client = FTDisplayClient()
-            await client.sendClearFrame(to: target)
-            AppLog.ftDiscovery.info("Cleared FT layer \(target.layer) on \(target.host, privacy: .public):\(target.port)")
-        }
+        )
     }
 
     /// Show a transient success banner (auto-clears after a few seconds).

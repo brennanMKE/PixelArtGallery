@@ -144,45 +144,10 @@ struct DisplayRegistryView: View {
         }
     }
 
+    /// Extracted to ``DisplayEmptyStateView`` (#0067) so the send popover
+    /// shows the identical Scan/Add affordances when the registry is empty.
     private var emptyState: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "display")
-                .font(.system(size: 48))
-                .foregroundStyle(.gray)
-            Text("No Displays")
-                .font(.headline)
-            Text("Scan your network or add a display manually")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-
-            HStack(spacing: 12) {
-                Button(action: scan) {
-                    HStack {
-                        if isScanning {
-                            ProgressView()
-                                .scaleEffect(0.8)
-                        } else {
-                            Image(systemName: "antenna.radiowaves.left.and.right")
-                        }
-                        Text("Scan")
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(isScanning)
-
-                Button(action: { showManualEntry = true }) {
-                    HStack {
-                        Image(systemName: "plus")
-                        Text("Add Manually")
-                    }
-                }
-                .buttonStyle(.bordered)
-            }
-            .padding(.top, 16)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding()
+        DisplayEmptyStateView(coordinator: coordinator)
     }
 
     private func scan() {

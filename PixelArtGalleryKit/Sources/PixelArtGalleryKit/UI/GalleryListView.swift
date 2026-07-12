@@ -25,6 +25,8 @@ public struct GalleryListView: View {
     @State private var renameText: String = ""
     /// The gallery item pending delete confirmation, if any.
     @State private var itemToDelete: GalleryItem?
+    /// The gallery item whose send popover is presented, if any (#0067).
+    @State private var selectedItem: GalleryItem?
 
     #if os(iOS)
     /// Whether the in-app Settings sheet is presented (iOS only; macOS uses the
@@ -86,40 +88,16 @@ public struct GalleryListView: View {
                             spacing: Theme.Spacing.m
                         ) {
                             ForEach(sortedItems) { item in
-                                NavigationLink(value: item) {
-                                    galleryCell(for: item)
-                                }
-                                .buttonStyle(.plain)
-                                .contextMenu {
-                                    Button {
-                                        coordinator.togglePin(item)
-                                    } label: {
-                                        Label(
-                                            item.isPinned ? "Unpin" : "Pin",
-                                            systemImage: item.isPinned ? "pin.slash" : "pin"
-                                        )
-                                    }
-                                    Button {
-                                        renameText = item.originalName
-                                        itemToRename = item
-                                    } label: {
-                                        Label("Rename", systemImage: "pencil")
-                                    }
-                                    Button(role: .destructive) {
-                                        itemToDelete = item
-                                    } label: {
-                                        Label("Delete", systemImage: "trash")
-                                    }
-                                }
+                                galleryCellButton(for: item)
                             }
                         }
                         .padding(Theme.Spacing.l)
                     }
                 }
             }
-            .navigationDestination(for: GalleryItem.self) { item in
-                GalleryDetailView(item: item, coordinator: coordinator)
-            }
+            // GalleryItem is no longer a push destination — tapping a cell
+            // presents GallerySendPopoverView instead (#0067).
+            // GalleryDetailView.swift is retired in #0068, not deleted here.
             .navigationTitle("Gallery")
             #if os(iOS)
             .toolbarBackground(.hidden, for: .navigationBar)
@@ -295,6 +273,59 @@ public struct GalleryListView: View {
             }
         }
         .tint(.pixelAccent)
+    }
+
+    /// A tappable grid cell that presents the send popover (#0067) instead of
+    /// pushing `GalleryDetailView`. Factored out of the `ForEach` body (rather
+    /// than inlined) because the combined `Button` + `.contextMenu` +
+    /// `.popover` modifier chain made the surrounding `ForEach` closure too
+    /// slow for the type checker to infer in one shot.
+    ///
+    /// Each cell gets its own derived `.popover(item:)` binding — a single
+    /// popover attached once at the grid/`ScrollView` level would lose
+    /// per-cell anchoring on macOS/iPad, and one shared binding across every
+    /// visible cell would present whichever cell's id happened to match.
+    @ViewBuilder
+    private func galleryCellButton(for item: GalleryItem) -> some View {
+        Button {
+            selectedItem = item
+        } label: {
+            galleryCell(for: item)
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button {
+                coordinator.togglePin(item)
+            } label: {
+                Label(
+                    item.isPinned ? "Unpin" : "Pin",
+                    systemImage: item.isPinned ? "pin.slash" : "pin"
+                )
+            }
+            Button {
+                renameText = item.originalName
+                itemToRename = item
+            } label: {
+                Label("Rename", systemImage: "pencil")
+            }
+            Button(role: .destructive) {
+                itemToDelete = item
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
+        .popover(item: Binding(
+            get: { selectedItem?.id == item.id ? selectedItem : nil },
+            set: { if $0 == nil { selectedItem = nil } }
+        )) { boundItem in
+            GallerySendPopoverView(item: boundItem, coordinator: coordinator)
+                // iPhone (compact width) adapts this popover to a sheet
+                // automatically — deliberately NOT forcing
+                // `.presentationCompactAdaptation(.popover)`, since this
+                // content is a full send surface (dropdown + preview + Send +
+                // variants list) that a cramped iPhone popover bubble would clip.
+                .presentationDragIndicator(.visible)
+        }
     }
 
     /// A single gallery grid cell: a square, rounded thumbnail of the imported
