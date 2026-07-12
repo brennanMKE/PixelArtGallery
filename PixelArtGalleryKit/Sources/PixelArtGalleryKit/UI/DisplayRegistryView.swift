@@ -41,6 +41,9 @@ struct DisplayRegistryView: View {
                     if !hasDefaultDisplay {
                         restoreDefaultSection
                     }
+                    #if os(macOS)
+                    addDisplaySection
+                    #endif
                     ForEach(displays) { display in
                         Button {
                             editTarget = display
@@ -75,6 +78,12 @@ struct DisplayRegistryView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
         #endif
+        // iOS keeps the nav-bar "+" pull-down menu. macOS deliberately has no
+        // toolbar item here: the Settings scene renders every toolbar control
+        // inside a prominent Liquid-Glass capsule (the stray "extra circle"
+        // around the "+", #0083), so on macOS the Scan/Add actions live in the
+        // list body (`addDisplaySection`) and the empty state instead.
+        #if os(iOS)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Menu {
@@ -95,6 +104,7 @@ struct DisplayRegistryView: View {
                 }
             }
         }
+        #endif
         .sheet(isPresented: $showManualEntry) {
             DisplayEditorView(mode: .add) { validated, layer in
                 try coordinator.addManualDisplay(
@@ -126,6 +136,35 @@ struct DisplayRegistryView: View {
             coordinator.configure(modelContext: modelContext)
         }
     }
+
+    #if os(macOS)
+    /// macOS-only: Scan/Add actions as labeled rows at the top of the list.
+    /// They live in the body rather than the Settings-window toolbar because the
+    /// macOS Settings scene wraps every toolbar control in a prominent
+    /// Liquid-Glass capsule — the stray "extra circle" around the "+" (#0083).
+    /// Body rows avoid that and read as clear, discoverable actions. iOS keeps
+    /// the nav-bar "+" menu.
+    private var addDisplaySection: some View {
+        Section {
+            Button(action: scan) {
+                if isScanning {
+                    Label {
+                        Text("Scanning…")
+                    } icon: {
+                        ProgressView().controlSize(.small)
+                    }
+                } else {
+                    Label("Scan Network", systemImage: "antenna.radiowaves.left.and.right")
+                }
+            }
+            .disabled(isScanning)
+
+            Button(action: { showManualEntry = true }) {
+                Label("Add Manually", systemImage: "plus")
+            }
+        }
+    }
+    #endif
 
     /// Shown above the list when the seeded default display has been deleted
     /// while other displays remain, so it's never gone for good.
