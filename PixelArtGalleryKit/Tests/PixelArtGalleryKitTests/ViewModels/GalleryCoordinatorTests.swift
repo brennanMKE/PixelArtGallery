@@ -207,6 +207,60 @@ import UniformTypeIdentifiers
         #expect(variants.count == 1)
     }
 
+    // MARK: - Pixel-level editing (#0076)
+
+    @Test func updateVariantPixelsReplacesAndPersistsBytes() async throws {
+        let context = try makeContext()
+        let coordinator = try makeCoordinator()
+        coordinator.configure(modelContext: context)
+
+        let item = try await makeItem(in: context, coordinator: coordinator)
+        try await coordinator.createVariant(for: item, width: 4, height: 4)
+        let variant = try #require(try context.fetch(FetchDescriptor<Variant>()).first)
+
+        let newData = Data(repeating: 0xAB, count: 4 * 4 * 4)
+        try coordinator.updateVariantPixels(variant, pixelGridData: newData)
+
+        #expect(variant.pixelGridData == newData)
+
+        // Re-fetch to confirm the change was actually saved through the context.
+        let refetched = try #require(try context.fetch(FetchDescriptor<Variant>()).first)
+        #expect(refetched.pixelGridData == newData,
+                "updateVariantPixels must persist through the ModelContext")
+    }
+
+    @Test func updateVariantPixelsRejectsWrongByteCount() async throws {
+        let context = try makeContext()
+        let coordinator = try makeCoordinator()
+        coordinator.configure(modelContext: context)
+
+        let item = try await makeItem(in: context, coordinator: coordinator)
+        try await coordinator.createVariant(for: item, width: 4, height: 4)
+        let variant = try #require(try context.fetch(FetchDescriptor<Variant>()).first)
+        let originalData = variant.pixelGridData
+
+        let wrongSizeData = Data(repeating: 0xFF, count: 4) // way too short
+        #expect(throws: PixelGridError.invalidDataSize(expected: 4 * 4 * 4, actual: 4)) {
+            try coordinator.updateVariantPixels(variant, pixelGridData: wrongSizeData)
+        }
+
+        #expect(variant.pixelGridData == originalData, "A rejected update must leave the stored bytes unchanged")
+    }
+
+    @Test func updateVariantPixelsThrowsWithoutModelContext() throws {
+        let coordinator = try makeCoordinator()
+        // Deliberately not configured with a model context.
+
+        let variant = Variant(
+            targetWidth: 2, targetHeight: 2,
+            pixelGridData: Data(repeating: 0, count: 2 * 2 * 4)
+        )
+
+        #expect(throws: GalleryCoordinatorError.missingModelContext) {
+            try coordinator.updateVariantPixels(variant, pixelGridData: Data(repeating: 0, count: 2 * 2 * 4))
+        }
+    }
+
     // MARK: - Naming at import / rename (#0018)
 
     @Test func renameGalleryItemUpdatesAndPersistsName() async throws {

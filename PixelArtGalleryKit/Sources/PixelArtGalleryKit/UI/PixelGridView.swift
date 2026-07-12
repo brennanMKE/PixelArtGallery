@@ -2,8 +2,17 @@ import SwiftUI
 
 /// Canvas-based pixel grid renderer that fits the whole grid by default and
 /// supports zoom (pinch + buttons), pan-when-zoomed, tap-to-select, and reset.
+///
+/// Also doubles as a minimal editor (#0076) when both `variant` and
+/// `coordinator` are supplied: an Inspect/Paint mode toggle, a color picker,
+/// quick-pick swatches, Replace All, and Save appear between the readout and
+/// the canvas. Variant-less (or coordinator-less) uses — the `#Preview` below,
+/// or any read-only caller — compile unchanged and stay purely inspectable.
 struct PixelGridView: View {
     @State private var viewModel: PixelGridViewModel
+
+    private let variant: Variant?
+    private let coordinator: GalleryCoordinator?
 
     // Gesture bookkeeping so pinch/drag accumulate from where they started.
     @State private var zoomAtGestureStart: Double = 1.0
@@ -11,8 +20,23 @@ struct PixelGridView: View {
     @State private var panAtGestureStart: CGSize = .zero
     @State private var isPanning = false
 
-    /// Initialize with optional variant data.
-    init(variant: Variant? = nil) {
+    // Paint mode state (#0076). Lives in the view, not the view model, so the
+    // view model's testable surface stays `Color`-free.
+    @State private var isPainting = false
+    @State private var paintColor: Color = .white
+
+    @Environment(\.self) private var environment
+
+    /// Editing UI (mode toggle, color picker, swatches, Replace All, Save)
+    /// only appears when both a variant and a coordinator are supplied.
+    private var isEditable: Bool { variant != nil && coordinator != nil }
+
+    /// Initialize with optional variant data and an optional coordinator to
+    /// persist edits through. Supplying only a variant (no coordinator) keeps
+    /// the view read-only, same as before #0076.
+    init(variant: Variant? = nil, coordinator: GalleryCoordinator? = nil) {
+        self.variant = variant
+        self.coordinator = coordinator
         if let variant = variant {
             do {
                 let model = try PixelGridViewModel(variant: variant)
@@ -30,6 +54,10 @@ struct PixelGridView: View {
     var body: some View {
         VStack(spacing: Theme.Spacing.s) {
             selectionReadout
+
+            if isEditable {
+                editControls
+            }
 
             GeometryReader { geo in
                 let container = geo.size
@@ -89,7 +117,15 @@ struct PixelGridView: View {
     private func tapGesture(container: CGSize) -> some Gesture {
         SpatialTapGesture()
             .onEnded { value in
-                viewModel.selectPixel(at: value.location, in: container)
+                if isEditable, isPainting {
+                    if let coord = viewModel.gridCoordinate(at: value.location, in: container) {
+                        let color = PixelColor(resolved: paintColor.resolve(in: environment))
+                        viewModel.setPixel(x: coord.x, y: coord.y, color: color)
+                        viewModel.selectPixel(x: coord.x, y: coord.y) // readout shows the new value
+                    } // outside the grid: no-op
+                } else {
+                    viewModel.selectPixel(at: value.location, in: container)
+                }
             }
     }
 
@@ -102,7 +138,7 @@ struct PixelGridView: View {
             if let selected = viewModel.selectedPixel {
                 let color = viewModel.pixelColor(x: selected.x, y: selected.y)
                 RoundedRectangle(cornerRadius: Theme.Radius.small, style: .continuous)
-                    .fill(swiftUIColor(color))
+                    .fill(color.swiftUIColor)
                     .frame(width: 20, height: 20)
                     .overlay(
                         RoundedRectangle(cornerRadius: Theme.Radius.small, style: .continuous)
@@ -124,6 +160,96 @@ struct PixelGridView: View {
         .padding(.vertical, Theme.Spacing.xs)
         .frame(maxWidth: .infinity)
         .background(.quaternary, in: RoundedRectangle(cornerRadius: Theme.Radius.small, style: .continuous))
+    }
+
+    // MARK: - Edit controls (#0076)
+
+    /// Mode toggle, color picker, quick-pick swatches, Replace All, and Save.
+    /// Only shown when ``isEditable``.
+    @ViewBuilder
+    private var editControls: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.s) {
+            Picker("Mode", selection: $isPainting) {
+                Text("Inspect").tag(false)
+                Text("Paint").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .onChange(of: isPainting) { _, newValue in
+                guard newValue, let selected = viewModel.selectedPixel else { return }
+                // Entering Paint: seed the paint color from the selected pixel.
+                paintColor = viewModel.pixelColor(x: selected.x, y: selected.y).swiftUIColor
+            }
+
+            if isPainting {
+                ColorPicker("Paint color", selection: $paintColor, supportsOpacity: true)
+                    .labelsHidden()
+
+                if !viewModel.swatchColors.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: Theme.Spacing.xs) {
+                            ForEach(Array(viewModel.swatchColors.enumerated()), id: \.offset) { _, swatch in
+                                Button {
+                                    paintColor = swatch.swiftUIColor
+                                } label: {
+                                    RoundedRectangle(cornerRadius: Theme.Radius.small, style: .continuous)
+                                        .fill(swatch.swiftUIColor)
+                                        .frame(width: 24, height: 24)
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: Theme.Radius.small, style: .continuous)
+                                                .stroke(.secondary, lineWidth: 0.5)
+                                        )
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+
+                HStack(spacing: Theme.Spacing.m) {
+                    Button("Replace All", action: replaceAllTapped)
+                        .disabled(viewModel.selectedPixel == nil)
+
+                    Spacer()
+
+                    if viewModel.hasUnsavedEdits {
+                        HStack(spacing: Theme.Spacing.xs) {
+                            Circle()
+                                .fill(.orange)
+                                .frame(width: 6, height: 6)
+                            Text("Edited")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    Button("Save", action: saveEdits)
+                        .buttonStyle(.borderedProminent)
+                        .disabled(!viewModel.hasUnsavedEdits)
+                }
+            }
+        }
+        .padding()
+        .background(.quaternary, in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
+    }
+
+    /// Replace every pixel matching the selected pixel's color with the
+    /// current paint color.
+    private func replaceAllTapped() {
+        guard let selected = viewModel.selectedPixel else { return }
+        let from = viewModel.pixelColor(x: selected.x, y: selected.y)
+        let to = PixelColor(resolved: paintColor.resolve(in: environment))
+        viewModel.replaceAll(of: from, with: to)
+    }
+
+    /// Persist the working copy back to the variant via the coordinator.
+    private func saveEdits() {
+        guard let variant, let coordinator else { return }
+        do {
+            try coordinator.updateVariantPixels(variant, pixelGridData: viewModel.encodedPixelGridData())
+            viewModel.hasUnsavedEdits = false
+        } catch {
+            AppLog.gridRenderer.error("Failed to save edited pixel grid for variant \(variant.id): \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     // MARK: - Zoom controls
@@ -161,15 +287,6 @@ struct PixelGridView: View {
 
     // MARK: - Drawing
 
-    private func swiftUIColor(_ c: PixelColor) -> Color {
-        Color(
-            red: Double(c.red) / 255.0,
-            green: Double(c.green) / 255.0,
-            blue: Double(c.blue) / 255.0,
-            opacity: Double(c.alpha) / 255.0
-        )
-    }
-
     private func drawPixelGrid(in context: inout GraphicsContext, container: CGSize) {
         let cell = viewModel.cellSize(in: container)
         guard cell > 0 else { return }
@@ -182,7 +299,7 @@ struct PixelGridView: View {
                 let cellX = origin.x + CGFloat(x) * cell
                 if cellX + cell < 0 || cellX > container.width { continue } // cull off-screen columns
                 let rect = CGRect(x: cellX, y: cellY, width: cell, height: cell)
-                context.fill(Path(rect), with: .color(swiftUIColor(viewModel.pixelColor(x: x, y: y))))
+                context.fill(Path(rect), with: .color(viewModel.pixelColor(x: x, y: y).swiftUIColor))
             }
         }
 

@@ -19,6 +19,15 @@ final class PixelGridViewModel {
     var gridHeight: Int
     var pixelData: [PixelColor] = []
 
+    /// True once the working copy (``pixelData``) diverges from the last
+    /// saved/loaded state (#0076). Cleared by the view after a successful Save.
+    var hasUnsavedEdits = false
+
+    /// Quick-pick swatches for the paint UI (#0076), captured once from the
+    /// variant's colors at load time — deliberately NOT recomputed as the
+    /// user paints, so the row stays stable during an edit session.
+    let swatchColors: [PixelColor]
+
     let minZoom: Double = 1.0
     let maxZoom: Double = 40.0
 
@@ -26,6 +35,7 @@ final class PixelGridViewModel {
         self.gridWidth = gridWidth
         self.gridHeight = gridHeight
         self.pixelData = pixelData
+        self.swatchColors = Self.dominantColors(in: pixelData, max: 10)
     }
 
     /// Initialize from a Variant's pixel grid data.
@@ -33,7 +43,9 @@ final class PixelGridViewModel {
         self.gridWidth = variant.targetWidth
         self.gridHeight = variant.targetHeight
         let grid = try PixelGrid.fromRGBA8888(variant.pixelGridData, width: variant.targetWidth, height: variant.targetHeight)
-        self.pixelData = grid.colors.flatMap { $0 }
+        let flattened = grid.colors.flatMap { $0 }
+        self.pixelData = flattened
+        self.swatchColors = Self.dominantColors(in: flattened, max: 10)
     }
 
     /// True when the grid is shown fully (no zoom-in), i.e. panning is disabled.
@@ -66,6 +78,73 @@ final class PixelGridViewModel {
         let index = y * gridWidth + x
         guard index >= 0, index < pixelData.count else { return .black }
         return pixelData[index]
+    }
+
+    // MARK: - Editing (#0076)
+
+    /// Set one pixel in the in-memory working copy. No-op (and no dirty flag)
+    /// when out of bounds or when the color is unchanged.
+    func setPixel(x: Int, y: Int, color: PixelColor) {
+        guard x >= 0, x < gridWidth, y >= 0, y < gridHeight else { return }
+        let index = y * gridWidth + x
+        guard index >= 0, index < pixelData.count, pixelData[index] != color else { return }
+        pixelData[index] = color
+        hasUnsavedEdits = true
+    }
+
+    /// Encode the working copy back to RGBA8888 bytes for persistence.
+    func encodedPixelGridData() -> Data {
+        var rows = [[PixelColor]]()
+        rows.reserveCapacity(gridHeight)
+        for y in 0..<gridHeight {
+            let start = y * gridWidth
+            let end = min(start + gridWidth, pixelData.count)
+            guard start < end else {
+                rows.append([])
+                continue
+            }
+            rows.append(Array(pixelData[start..<end]))
+        }
+        return PixelGrid(width: gridWidth, height: gridHeight, colors: rows).toRGBA8888()
+    }
+
+    /// Top-`max` distinct colors by frequency, most-frequent first.
+    /// Ties break deterministically by first appearance in `pixels`.
+    static func dominantColors(in pixels: [PixelColor], max: Int) -> [PixelColor] {
+        guard max > 0, !pixels.isEmpty else { return [] }
+
+        var counts: [PixelColor: Int] = [:]
+        var firstIndex: [PixelColor: Int] = [:]
+        for (index, color) in pixels.enumerated() {
+            counts[color, default: 0] += 1
+            if firstIndex[color] == nil {
+                firstIndex[color] = index
+            }
+        }
+
+        let ordered = counts.keys.sorted { lhs, rhs in
+            let lhsCount = counts[lhs] ?? 0
+            let rhsCount = counts[rhs] ?? 0
+            if lhsCount != rhsCount { return lhsCount > rhsCount }
+            return (firstIndex[lhs] ?? 0) < (firstIndex[rhs] ?? 0)
+        }
+
+        return Array(ordered.prefix(max))
+    }
+
+    /// Every exact-RGBA match of `from` becomes `to`; all other pixels untouched.
+    static func replacingColor(in pixels: [PixelColor], from: PixelColor, to: PixelColor) -> [PixelColor] {
+        pixels.map { $0 == from ? to : $0 }
+    }
+
+    /// Apply Replace All to the working copy; sets the dirty flag only when
+    /// at least one pixel actually changed (from == to or no matches → no-op).
+    func replaceAll(of from: PixelColor, with to: PixelColor) {
+        guard from != to else { return }
+        let replaced = Self.replacingColor(in: pixelData, from: from, to: to)
+        guard replaced != pixelData else { return }
+        pixelData = replaced
+        hasUnsavedEdits = true
     }
 
     // MARK: - Layout (all derived from the container size)

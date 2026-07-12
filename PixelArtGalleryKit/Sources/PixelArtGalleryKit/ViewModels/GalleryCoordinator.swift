@@ -703,6 +703,43 @@ final class GalleryCoordinator {
         }
     }
 
+    /// Persist an edited pixel grid onto an existing variant (#0076).
+    ///
+    /// Mirrors ``updateVariantDimensions(_:width:height:)`` minus the engine
+    /// work — painting a pixel needs no re-pixelation, so this is a
+    /// synchronous byte-count-validated write followed by a save. The byte
+    /// count is validated defensively (the caller — `PixelGridViewModel`
+    /// — always encodes at the variant's own dimensions, but a stale view
+    /// model outliving a dimension change elsewhere must not corrupt the
+    /// stored grid).
+    /// - Parameters:
+    ///   - variant: The variant to update.
+    ///   - pixelGridData: RGBA8888 bytes, expected to be exactly
+    ///     `variant.targetWidth * variant.targetHeight * 4` bytes.
+    func updateVariantPixels(_ variant: Variant, pixelGridData: Data) throws {
+        guard let modelContext else {
+            AppLog.variant.error("updateVariantPixels called before a ModelContext was configured")
+            throw GalleryCoordinatorError.missingModelContext
+        }
+
+        let expected = variant.targetWidth * variant.targetHeight * 4
+        guard pixelGridData.count == expected else {
+            AppLog.variant.error("updateVariantPixels received \(pixelGridData.count) bytes, expected \(expected) for variant \(variant.id)")
+            throw PixelGridError.invalidDataSize(expected: expected, actual: pixelGridData.count)
+        }
+
+        variant.pixelGridData = pixelGridData
+
+        do {
+            try modelContext.save()
+            AppLog.variant.info("Updated variant \(variant.id) pixel data (\(pixelGridData.count) bytes)")
+        } catch {
+            currentError = error.localizedDescription
+            AppLog.variant.error("Failed to update variant \(variant.id) pixel data: \(error.localizedDescription, privacy: .public)")
+            throw error
+        }
+    }
+
     /// Persist a manually entered Flaschen Taschen display.
     ///
     /// Used when mDNS discovery fails or is unavailable and the user types in a

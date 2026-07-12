@@ -190,8 +190,8 @@ struct VariantDetailView: View {
     private var previewSection: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.s) {
             SectionHeader("Preview")
-            PixelGridView(variant: variant)
-                .frame(height: 340)
+            PixelGridView(variant: variant, coordinator: coordinator)
+                .frame(height: 420)
                 .card(padding: 0)
         }
     }

@@ -72,4 +72,124 @@ import CoreGraphics
         vm.selectPixel(at: CGPoint(x: -5, y: -5), in: container) // out of bounds -> cleared
         #expect(vm.selectedPixel == nil)
     }
+
+    // MARK: - Paint mutation (#0076)
+
+    /// setPixel changes exactly one index and marks the grid dirty.
+    @Test func setPixelChangesExactlyThatPixelAndMarksDirty() {
+        let data = (0..<9).map { PixelColor(red: UInt8($0), green: 0, blue: 0) }
+        let vm = PixelGridViewModel(gridWidth: 3, gridHeight: 3, pixelData: data)
+        #expect(!vm.hasUnsavedEdits)
+
+        let newColor = PixelColor(red: 200, green: 100, blue: 50)
+        vm.setPixel(x: 1, y: 1, color: newColor) // index 4
+
+        #expect(vm.hasUnsavedEdits)
+        for (index, original) in data.enumerated() {
+            if index == 4 {
+                #expect(vm.pixelData[index] == newColor)
+            } else {
+                #expect(vm.pixelData[index] == original, "Only the painted pixel should change")
+            }
+        }
+    }
+
+    /// Out-of-bounds and same-color setPixel calls are no-ops and never dirty the grid.
+    @Test func setPixelIsNoOpOutOfBoundsOrUnchanged() {
+        let data = (0..<9).map { PixelColor(red: UInt8($0), green: 0, blue: 0) }
+        let vm = PixelGridViewModel(gridWidth: 3, gridHeight: 3, pixelData: data)
+
+        vm.setPixel(x: -1, y: 0, color: .white)
+        #expect(!vm.hasUnsavedEdits, "Out-of-bounds x should be a no-op")
+        vm.setPixel(x: 0, y: 3, color: .white)
+        #expect(!vm.hasUnsavedEdits, "Out-of-bounds y should be a no-op")
+
+        let existing = vm.pixelColor(x: 0, y: 0)
+        vm.setPixel(x: 0, y: 0, color: existing)
+        #expect(!vm.hasUnsavedEdits, "Setting the same color should be a no-op")
+        #expect(vm.pixelData == data, "Nothing should have changed")
+    }
+
+    /// encodedPixelGridData round-trips through PixelGrid.fromRGBA8888 and
+    /// places the painted pixel's bytes at the correct row-major offset.
+    @Test func encodedPixelGridDataRoundTrips() throws {
+        var data = Array(repeating: PixelColor.black, count: 4) // 2x2
+        let vm = PixelGridViewModel(gridWidth: 2, gridHeight: 2, pixelData: data)
+
+        let painted = PixelColor(red: 10, green: 20, blue: 30, alpha: 255)
+        vm.setPixel(x: 1, y: 0, color: painted) // index 1
+
+        let encoded = vm.encodedPixelGridData()
+        #expect(encoded.count == 2 * 2 * 4)
+
+        let decoded = try PixelGrid.fromRGBA8888(encoded, width: 2, height: 2)
+        #expect(decoded.color(x: 1, y: 0) == painted)
+        #expect(decoded.color(x: 0, y: 0) == .black)
+        #expect(decoded.color(x: 0, y: 1) == .black)
+        #expect(decoded.color(x: 1, y: 1) == .black)
+
+        data[1] = painted
+        #expect(vm.pixelData == data)
+    }
+
+    // MARK: - Dominant colors (#0076)
+
+    /// Known frequencies return the top-N distinct colors, most-frequent
+    /// first, capped at `max`, ties broken by first appearance.
+    @Test func dominantColorsOrdersByFrequencyThenFirstAppearance() {
+        let red = PixelColor(red: 255, green: 0, blue: 0)
+        let green = PixelColor(red: 0, green: 255, blue: 0)
+        let blue = PixelColor(red: 0, green: 0, blue: 255)
+        let yellow = PixelColor(red: 255, green: 255, blue: 0)
+
+        // red: 3, green: 3 (tied, but green appears first), blue: 2, yellow: 1
+        let pixels = [green, red, red, green, blue, red, green, blue, yellow]
+
+        let top2 = PixelGridViewModel.dominantColors(in: pixels, max: 2)
+        #expect(top2 == [green, red], "Ties break by first appearance; green appears before red")
+
+        let top10 = PixelGridViewModel.dominantColors(in: pixels, max: 10)
+        #expect(top10 == [green, red, blue, yellow], "Capped at distinct color count when max exceeds it")
+
+        #expect(PixelGridViewModel.dominantColors(in: [], max: 5).isEmpty)
+    }
+
+    // MARK: - Replace All (#0076)
+
+    /// replacingColor swaps every exact match and leaves everything else untouched.
+    @Test func replacingColorSwapsExactMatchesOnly() {
+        let a = PixelColor(red: 1, green: 1, blue: 1)
+        let b = PixelColor(red: 2, green: 2, blue: 2)
+        let c = PixelColor(red: 3, green: 3, blue: 3)
+        let pixels = [a, b, a, c, a]
+
+        let replaced = PixelGridViewModel.replacingColor(in: pixels, from: a, to: b)
+        #expect(replaced == [b, b, b, c, b])
+
+        // A from-color absent from the grid is a no-op.
+        let absentColor = PixelColor(red: 9, green: 9, blue: 9)
+        let unchanged = PixelGridViewModel.replacingColor(in: pixels, from: absentColor, to: b)
+        #expect(unchanged == pixels)
+    }
+
+    /// replaceAll(of:with:) mutates the working copy and only dirties when
+    /// something actually changed.
+    @Test func replaceAllMutatesAndDirtiesOnlyWhenChanged() {
+        let a = PixelColor(red: 1, green: 1, blue: 1)
+        let b = PixelColor(red: 2, green: 2, blue: 2)
+        let absentColor = PixelColor(red: 9, green: 9, blue: 9)
+        let pixels = [a, b, a]
+
+        let vm = PixelGridViewModel(gridWidth: 3, gridHeight: 1, pixelData: pixels)
+        vm.replaceAll(of: absentColor, with: b)
+        #expect(!vm.hasUnsavedEdits, "No matches should not dirty the grid")
+        #expect(vm.pixelData == pixels)
+
+        vm.replaceAll(of: a, with: a)
+        #expect(!vm.hasUnsavedEdits, "from == to should not dirty the grid")
+
+        vm.replaceAll(of: a, with: b)
+        #expect(vm.hasUnsavedEdits, "An actual replacement should dirty the grid")
+        #expect(vm.pixelData == [b, b, b])
+    }
 }
