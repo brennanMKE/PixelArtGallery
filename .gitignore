@@ -59,3 +59,7 @@ coverage/
 .env.local
 *.log
 .vscode/
+
+# Python
+__pycache__/
+
