@@ -39,6 +39,12 @@ public final class GalleryItem {
     /// existed continue to load via SwiftData lightweight migration.
     public var isPinned: Bool = false
 
+    /// Whether this item is one of the bundled built-in sprites (#0074).
+    /// Built-ins are reconciled to always-present on launch and are
+    /// non-deletable/non-renamable in the UI. Defaults to `false` so records
+    /// persisted before this attribute existed load via lightweight migration.
+    public var isBuiltIn: Bool = false
+
     /// Array of variants created from this original image
     /// Relationship: Cascade delete—removing a GalleryItem removes all its variants
     @Relationship(deleteRule: .cascade, inverse: \Variant.galleryItem) public var variants: [Variant] = []
@@ -51,13 +57,15 @@ public final class GalleryItem {
     ///   - originalHeight: Height of original image
     ///   - contentHash: SHA-256 hex digest of the original bytes (defaults to "")
     ///   - importedDate: Timestamp of import (defaults to now)
+    ///   - isBuiltIn: Whether this is a bundled built-in sprite (#0074), defaults to `false`
     public init(
         originalImagePath: String,
         originalName: String,
         originalWidth: Int,
         originalHeight: Int,
         contentHash: String = "",
-        importedDate: Date = Date()
+        importedDate: Date = Date(),
+        isBuiltIn: Bool = false
     ) {
         self.id = UUID()
         self.originalImagePath = originalImagePath
@@ -66,6 +74,7 @@ public final class GalleryItem {
         self.originalHeight = originalHeight
         self.contentHash = contentHash
         self.importedDate = importedDate
+        self.isBuiltIn = isBuiltIn
         self.variants = []
     }
 }

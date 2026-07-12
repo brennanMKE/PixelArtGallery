@@ -28,6 +28,9 @@ let package = Package(
                     condition: .when(platforms: [.macOS])
                 ),
             ],
+            resources: [
+                .copy("Resources/DefaultSprites"),
+            ],
             swiftSettings: [
                 .defaultIsolation(MainActor.self),
             ]

@@ -41,6 +41,29 @@ nonisolated enum GalleryCoordinatorError: LocalizedError, Equatable {
 /// Main coordinator for gallery state management
 @Observable
 final class GalleryCoordinator {
+    /// Ordered manifest of the bundled built-in sprite resource names (#0074),
+    /// each backed by a 45×35 PNG at
+    /// `Resources/DefaultSprites/<name>.png`. Display name is `name.capitalized`
+    /// ("coin" → "Coin"). Order here is the order sprites are reconciled and,
+    /// absent any pinning, the order they appear in the Sprites section.
+    static let builtInSpriteNames = [
+        "coin", "frog", "ghost", "heart", "invader",
+        "mushroom", "pacman", "robot", "ship", "skull", "star",
+    ]
+
+    /// Load a bundled built-in sprite's raw PNG bytes by its manifest `name`
+    /// (e.g. `"coin"`), or `nil` if the resource is missing/unreadable.
+    ///
+    /// Only `PixelArtGalleryKit` (not its test target) declares
+    /// `Resources/DefaultSprites` in `Package.swift`, so `Bundle.module` only
+    /// resolves here — this is the sole call site, which also gives tests a
+    /// way to assert bundling works without needing their own `Bundle.module`.
+    static func builtInSpriteData(for name: String) -> Data? {
+        guard let url = Bundle.module.url(forResource: name, withExtension: "png", subdirectory: "DefaultSprites") else {
+            return nil
+        }
+        return try? Data(contentsOf: url)
+    }
     /// The SwiftData context used for inserts and deletes.
     ///
     /// Live reads (`@Query`) belong to the SwiftUI layer; the coordinator only
@@ -73,6 +96,13 @@ final class GalleryCoordinator {
     /// (same as ``modelContext``/``fileStorage``). Memory cost is negligible
     /// (a 45×35 preview is ~6 KB), so no size cap is needed.
     @ObservationIgnored private var previewCache: [FittedPreviewCacheKey: FittedPreview] = [:]
+
+    /// Re-entrancy guard for ``reconcileBuiltInSpritesIfNeeded()`` (#0074): set
+    /// synchronously before the method's first `await` and reset in `defer`,
+    /// so a second concurrent `onAppear` (macOS window re-open, iOS nav churn)
+    /// can't run a second reconcile and double-insert. `@ObservationIgnored`
+    /// because it is an implementation detail that must not invalidate views.
+    @ObservationIgnored private var isReconcilingBuiltIns = false
 
     var isImporting = false
     var showImagePicker = false
@@ -121,9 +151,15 @@ final class GalleryCoordinator {
     /// - Parameters:
     ///   - name: Display name for the image
     ///   - imageData: Raw image data (JPEG, PNG, HEIC, etc.)
+    ///   - isBuiltIn: Whether this creates a bundled built-in sprite (#0074).
+    ///     When `true`, the content-hash duplicate short-circuit below is
+    ///     skipped — a built-in's presence is decided by the reconcile's
+    ///     name+flag match, not by hash, so a user who happens to import
+    ///     identical bytes can't permanently suppress a sprite. The hash is
+    ///     still computed and stored on the item either way.
     /// - Returns: Whether a new item was created or an existing duplicate matched.
     @discardableResult
-    func createGalleryItem(name: String, imageData: Data) async throws -> ImportResult {
+    func createGalleryItem(name: String, imageData: Data, isBuiltIn: Bool = false) async throws -> ImportResult {
         guard let modelContext else {
             AppLog.gallery.error("createGalleryItem called before a ModelContext was configured")
             throw GalleryCoordinatorError.missingModelContext
@@ -137,15 +173,18 @@ final class GalleryCoordinator {
             let hash = Self.contentHash(for: imageData)
 
             // Skip the import if an identical image is already in the gallery.
-            var descriptor = FetchDescriptor<GalleryItem>(
-                predicate: #Predicate { $0.contentHash == hash }
-            )
-            descriptor.fetchLimit = 1
-            if let existing = try modelContext.fetch(descriptor).first {
-                let message = "“\(existing.originalName)” is already in your gallery — skipped the duplicate."
-                importMessage = message
-                AppLog.gallery.info("Skipped duplicate import; matches existing item: \(existing.originalName, privacy: .public)")
-                return .duplicate(existingName: existing.originalName)
+            // Built-ins bypass this check entirely (see the `isBuiltIn` doc above).
+            if !isBuiltIn {
+                var descriptor = FetchDescriptor<GalleryItem>(
+                    predicate: #Predicate { $0.contentHash == hash }
+                )
+                descriptor.fetchLimit = 1
+                if let existing = try modelContext.fetch(descriptor).first {
+                    let message = "“\(existing.originalName)” is already in your gallery — skipped the duplicate."
+                    importMessage = message
+                    AppLog.gallery.info("Skipped duplicate import; matches existing item: \(existing.originalName, privacy: .public)")
+                    return .duplicate(existingName: existing.originalName)
+                }
             }
 
             // Persist the original bytes and capture the on-disk filename.
@@ -165,7 +204,8 @@ final class GalleryCoordinator {
                 originalName: name,
                 originalWidth: width,
                 originalHeight: height,
-                contentHash: hash
+                contentHash: hash,
+                isBuiltIn: isBuiltIn
             )
 
             modelContext.insert(item)
@@ -178,6 +218,75 @@ final class GalleryCoordinator {
             AppLog.gallery.error("Failed to create gallery item '\(name, privacy: .public)': \(error.localizedDescription, privacy: .public)")
             throw error
         }
+    }
+
+    /// Reconcile the bundled built-in sprites (#0074) so they're always
+    /// present, re-inserting any missing from the bundle on every launch.
+    ///
+    /// Unlike ``seedDefaultDisplayIfNeeded()``, there is **no seed-once flag**
+    /// — presence IS the state, which is exactly what makes built-ins
+    /// always-restore: deleting one (which the UI disallows, but a damaged
+    /// store could) simply means it's missing next time this runs, and it
+    /// comes back. This method only ever inserts; it never deletes and never
+    /// touches user items.
+    ///
+    /// Guarded against re-entrancy (a second concurrent `onAppear`) and
+    /// tolerant of per-sprite failures — a missing/unreadable resource or a
+    /// failed insert is logged and skipped, never blocking launch or
+    /// aborting the remaining sprites.
+    /// - Returns: The number of built-in items inserted.
+    @discardableResult
+    func reconcileBuiltInSpritesIfNeeded() async -> Int {
+        guard let modelContext else {
+            AppLog.gallery.error("reconcileBuiltInSpritesIfNeeded called before a ModelContext was configured")
+            return 0
+        }
+
+        guard !isReconcilingBuiltIns else {
+            AppLog.gallery.info("Skipped concurrent reconcileBuiltInSpritesIfNeeded call")
+            return 0
+        }
+        isReconcilingBuiltIns = true
+        defer { isReconcilingBuiltIns = false }
+
+        let existingNames: Set<String>
+        do {
+            let existing = try modelContext.fetch(FetchDescriptor<GalleryItem>(
+                predicate: #Predicate { $0.isBuiltIn == true }
+            ))
+            existingNames = Set(existing.map(\.originalName))
+        } catch {
+            AppLog.gallery.error("Failed to fetch existing built-in sprites: \(error.localizedDescription, privacy: .public)")
+            return 0
+        }
+
+        var insertedCount = 0
+        for name in Self.builtInSpriteNames {
+            let displayName = name.capitalized
+            guard !existingNames.contains(displayName) else { continue }
+
+            guard let data = Self.builtInSpriteData(for: name) else {
+                AppLog.gallery.error("Missing or unreadable built-in sprite resource: \(name, privacy: .public)")
+                continue
+            }
+
+            do {
+                try await createGalleryItem(name: displayName, imageData: data, isBuiltIn: true)
+                insertedCount += 1
+            } catch {
+                // A background reconcile must not pop the launch-time error
+                // alert — createGalleryItem already set currentError above,
+                // so clear it and just log.
+                currentError = nil
+                AppLog.gallery.error("Failed to insert built-in sprite '\(displayName, privacy: .public)': \(error.localizedDescription, privacy: .public)")
+                continue
+            }
+        }
+
+        if insertedCount > 0 {
+            AppLog.gallery.info("Reconciled built-in sprites: \(insertedCount) inserted")
+        }
+        return insertedCount
     }
 
     /// Compute the lowercase hex SHA-256 digest of raw image bytes.
@@ -815,6 +924,12 @@ final class GalleryCoordinator {
             return
         }
 
+        // Built-in sprites are non-renamable: the UI already omits the
+        // Rename action for them (#0074), and `originalName` is the
+        // reconcile match key — renaming "Coin" would cause a duplicate
+        // re-insert next launch. This is the backstop for any future caller.
+        guard !item.isBuiltIn else { return }
+
         let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
@@ -852,6 +967,14 @@ final class GalleryCoordinator {
     func deleteGalleryItem(_ item: GalleryItem) {
         guard let modelContext else {
             AppLog.gallery.error("deleteGalleryItem called before a ModelContext was configured")
+            return
+        }
+
+        // Built-in sprites are non-deletable (#0074): the UI already omits
+        // the Delete action for them, and this is the backstop so no present
+        // or future call site can remove one.
+        guard !item.isBuiltIn else {
+            AppLog.gallery.error("Refused to delete built-in gallery item \(item.id)")
             return
         }
 

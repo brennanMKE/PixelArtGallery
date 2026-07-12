@@ -62,6 +62,13 @@ public struct GalleryListView: View {
         sortOrder.sortedForGallery(galleryItems)
     }
 
+    /// The gallery split into the user's imports and the built-in sprites
+    /// (#0074), each still in ``sortedItems``' order — pinning and the
+    /// user's chosen sort apply within each section for free.
+    private var sections: (user: [GalleryItem], builtIn: [GalleryItem]) {
+        GalleryPartition.partition(sortedItems)
+    }
+
     public init() {}
 
     public var body: some View {
@@ -73,52 +80,55 @@ public struct GalleryListView: View {
                 Color.matteBackground
                     .ignoresSafeArea()
 
-                if galleryItems.isEmpty {
-                    EmptyStateView(
-                        icon: "photo.on.rectangle.angled",
-                        title: "No Gallery Items",
-                        message: "Import an image to start creating pixel art.",
-                        actionLabel: "Import Image",
-                        action: { coordinator.showImagePicker = true },
-                        animatedHero: true
-                    )
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    // Clears the (static, since there's nothing to scroll)
-                    // expanded header sitting on top.
-                    .safeAreaPadding(.top, GalleryHeaderMetrics.expandedHeight)
-                } else {
-                    // Adaptive thumbnail grid: column count reflows with the
-                    // scene width (more columns on a wide Mac window or
-                    // iPad, fewer on iPhone). A single full-height
-                    // ScrollView — the collapsing header overlays it and
-                    // rows scroll *behind* the header rather than clipping
-                    // against a separate ScrollView's top edge (#0072).
-                    ScrollView {
-                        LazyVGrid(
-                            columns: [GridItem(.adaptive(minimum: 150, maximum: 220), spacing: Theme.Spacing.m)],
-                            alignment: .leading,
-                            spacing: Theme.Spacing.m
-                        ) {
-                            ForEach(sortedItems) { item in
-                                galleryCellButton(for: item)
-                            }
+                // A single full-height ScrollView regardless of state — the
+                // collapsing header overlays it and rows scroll *behind* the
+                // header rather than clipping against a separate
+                // ScrollView's top edge (#0072). Two labeled sections:
+                // "Your Images" (the user's imports, or the animated hero
+                // when empty) and "Sprites" (the always-present, built-in
+                // items; #0074). A LazyVStack of two grids rather than one
+                // LazyVGrid with `Section`s, because the empty "Your Images"
+                // content is a full-width hero, not a grid cell.
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: Theme.Spacing.l) {
+                        sectionHeader("Your Images")
+                        if sections.user.isEmpty {
+                            EmptyStateView(
+                                icon: "photo.on.rectangle.angled",
+                                title: "No Gallery Items",
+                                message: "Import an image to start creating pixel art.",
+                                actionLabel: "Import Image",
+                                action: { coordinator.showImagePicker = true },
+                                animatedHero: true
+                            )
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, Theme.Spacing.xl)
+                        } else {
+                            spriteGrid(for: sections.user)
                         }
-                        .padding(Theme.Spacing.l)
+                        // Hidden until built-ins exist (e.g. the first few
+                        // frames before ``GalleryCoordinator/reconcileBuiltInSpritesIfNeeded()``
+                        // completes, or a total bundle failure).
+                        if !sections.builtIn.isEmpty {
+                            sectionHeader("Sprites")
+                            spriteGrid(for: sections.builtIn)
+                        }
                     }
-                    // Constant inset — content starts below the FULL header
-                    // at rest, regardless of the overlay's current
-                    // (possibly shrunk) height. Avoids a feedback loop
-                    // between the shrinking overlay and the content inset.
-                    .contentMargins(.top, GalleryHeaderMetrics.expandedHeight, for: .scrollContent)
-                    .onScrollGeometryChange(for: CGFloat.self) { geometry in
-                        geometry.contentOffset.y + geometry.contentInsets.top
-                    } action: { _, newValue in
-                        headerScrollOffset = newValue
-                    }
+                    .padding(Theme.Spacing.l)
+                }
+                // Constant inset — content starts below the FULL header
+                // at rest, regardless of the overlay's current
+                // (possibly shrunk) height. Avoids a feedback loop
+                // between the shrinking overlay and the content inset.
+                .contentMargins(.top, GalleryHeaderMetrics.expandedHeight, for: .scrollContent)
+                .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                    geometry.contentOffset.y + geometry.contentInsets.top
+                } action: { _, newValue in
+                    headerScrollOffset = newValue
                 }
             }
             .overlay(alignment: .top) {
-                GalleryBannerView(scrollOffset: galleryItems.isEmpty ? 0 : headerScrollOffset)
+                GalleryBannerView(scrollOffset: headerScrollOffset)
             }
             #if os(iOS)
             // The bottom bar carries Settings, the large centered `+`, and
@@ -199,6 +209,11 @@ public struct GalleryListView: View {
                 // completely empty, so Send to Display always has a target
                 // (#0021). Idempotent — no-op once any display exists.
                 coordinator.seedDefaultDisplayIfNeeded()
+                // Reconcile the bundled built-in sprites (#0074) so any
+                // missing ones are re-inserted on every launch — no seed-once
+                // flag, presence is the state. The `@Query` live-updates the
+                // Sprites grid as items insert.
+                Task { await coordinator.reconcileBuiltInSpritesIfNeeded() }
             }
             // Rename an existing gallery item.
             .alert("Rename Image", isPresented: Binding(
@@ -301,6 +316,36 @@ public struct GalleryListView: View {
         .tint(.pixelAccent)
     }
 
+    /// A section title for the gallery grid's "Your Images" / "Sprites"
+    /// sections (#0074). Primary text reads legibly on the plain
+    /// `Color.matteBackground` matte the sections scroll on, in both color
+    /// schemes — no material chip needed.
+    @ViewBuilder
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title)
+            .font(.title3.bold())
+            .foregroundStyle(.primary)
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    /// The adaptive thumbnail grid shared by both gallery sections (#0074):
+    /// column count reflows with the scene width (more columns on a wide Mac
+    /// window or iPad, fewer on iPhone). Factored out of the single grid that
+    /// used to be the whole non-empty body, so "Your Images" and "Sprites"
+    /// each get their own instance.
+    @ViewBuilder
+    private func spriteGrid(for items: [GalleryItem]) -> some View {
+        LazyVGrid(
+            columns: [GridItem(.adaptive(minimum: 150, maximum: 220), spacing: Theme.Spacing.m)],
+            alignment: .leading,
+            spacing: Theme.Spacing.m
+        ) {
+            ForEach(items) { item in
+                galleryCellButton(for: item)
+            }
+        }
+    }
+
     /// A tappable grid cell that presents the send popover (#0067) — the sole
     /// entry point since `GalleryDetailView` was retired in #0068. Factored
     /// out of the `ForEach` body (rather
@@ -321,6 +366,9 @@ public struct GalleryListView: View {
         }
         .buttonStyle(.plain)
         .contextMenu {
+            // Pin stays for every item — a pinned built-in just leads the
+            // Sprites section, since partitioning happens after
+            // `sortedForGallery` (#0074).
             Button {
                 coordinator.togglePin(item)
             } label: {
@@ -329,16 +377,21 @@ public struct GalleryListView: View {
                     systemImage: item.isPinned ? "pin.slash" : "pin"
                 )
             }
-            Button {
-                renameText = item.originalName
-                itemToRename = item
-            } label: {
-                Label("Rename", systemImage: "pencil")
-            }
-            Button(role: .destructive) {
-                itemToDelete = item
-            } label: {
-                Label("Delete", systemImage: "trash")
+            // Rename and Delete are user-items-only: built-in sprites are
+            // non-renamable (renaming would break the reconcile's name match
+            // key) and non-deletable (#0074). The coordinator backstops both.
+            if !item.isBuiltIn {
+                Button {
+                    renameText = item.originalName
+                    itemToRename = item
+                } label: {
+                    Label("Rename", systemImage: "pencil")
+                }
+                Button(role: .destructive) {
+                    itemToDelete = item
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
             }
         }
         .popover(item: Binding(
