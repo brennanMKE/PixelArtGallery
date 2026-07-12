@@ -5,8 +5,7 @@ import SwiftUI
 /// Prefills the width/height fields from the variant's current size. Saving
 /// re-runs the pixelation engine at the new dimensions (PRD §2 "Variant
 /// Management"), which the caller wires to
-/// ``GalleryCoordinator/updateVariantDimensions(_:width:height:)``. Mirrors
-/// ``VariantCreationView`` in style and validation.
+/// ``GalleryCoordinator/updateVariantDimensions(_:width:height:)``.
 struct VariantEditDimensionsView: View {
     @Environment(\.dismiss) var dismiss
 

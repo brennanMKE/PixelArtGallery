@@ -373,98 +373,12 @@ import UniformTypeIdentifiers
         #expect(displays.first?.source == "manual")
     }
 
-    // MARK: - Display-fitted variants (#0063)
-
-    /// A square 16×16 source into a non-square 64×32 display must produce a
-    /// variant sized to the *fit* dimensions (32×32), not the raw display
-    /// dimensions — the regression guard for treating `createFittedVariant`
-    /// as a plain display-dims passthrough.
-    @Test func createFittedVariantUsesFitDimensionsNotDisplayDimensions() async throws {
-        let context = try makeContext()
-        let coordinator = try makeCoordinator()
-        coordinator.configure(modelContext: context)
-
-        let display = FlaschenTaschenDisplay(
-            host: "10.0.0.2", port: 1337, displayName: "Wide Wall",
-            displayWidth: 64, displayHeight: 32
-        )
-        context.insert(display)
-        try context.save()
-
-        let item = try await makeItem(in: context, coordinator: coordinator)
-
-        let variant = try await coordinator.createFittedVariant(for: item, display: display)
-
-        #expect(variant.targetWidth == 32, "16x16 source into 64x32 display should fit to 32x32, not 64x32")
-        #expect(variant.targetHeight == 32)
-        #expect(variant.pixelGridData.count == 32 * 32 * 4)
-        #expect(variant.associatedDisplayId == display.id)
-
-        let variants = try context.fetch(FetchDescriptor<Variant>())
-        #expect(variants.count == 1)
-        #expect(variants.first?.id == variant.id, "The returned variant must be the one persisted in the context")
-    }
-
-    /// Re-invoking `createFittedVariant` for the same item + display must
-    /// reuse the existing fitted variant rather than spawning a duplicate.
-    @Test func createFittedVariantDedupsForSameItemAndDisplay() async throws {
-        let context = try makeContext()
-        let coordinator = try makeCoordinator()
-        coordinator.configure(modelContext: context)
-
-        let display = FlaschenTaschenDisplay(
-            host: "10.0.0.3", port: 1337, displayName: "Office",
-            displayWidth: 64, displayHeight: 32
-        )
-        context.insert(display)
-        try context.save()
-
-        let item = try await makeItem(in: context, coordinator: coordinator)
-
-        let first = try await coordinator.createFittedVariant(for: item, display: display)
-        let second = try await coordinator.createFittedVariant(for: item, display: display)
-
-        #expect(first.id == second.id, "Re-selecting the same display must reuse the existing fitted variant")
-        #expect(item.variants.count == 1, "Dedup must not add a second variant")
-
-        let variants = try context.fetch(FetchDescriptor<Variant>())
-        #expect(variants.count == 1, "The store must not contain a duplicate fitted variant")
-    }
-
-    /// A different display for the same item is a genuinely new fit and must
-    /// create a second, independent variant.
-    @Test func createFittedVariantCreatesSeparateVariantPerDisplay() async throws {
-        let context = try makeContext()
-        let coordinator = try makeCoordinator()
-        coordinator.configure(modelContext: context)
-
-        let displayA = FlaschenTaschenDisplay(
-            host: "10.0.0.4", port: 1337, displayName: "Wall A",
-            displayWidth: 64, displayHeight: 32
-        )
-        let displayB = FlaschenTaschenDisplay(
-            host: "10.0.0.5", port: 1337, displayName: "Wall B",
-            displayWidth: 45, displayHeight: 35
-        )
-        context.insert(displayA)
-        context.insert(displayB)
-        try context.save()
-
-        let item = try await makeItem(in: context, coordinator: coordinator)
-
-        let variantA = try await coordinator.createFittedVariant(for: item, display: displayA)
-        let variantB = try await coordinator.createFittedVariant(for: item, display: displayB)
-
-        #expect(variantA.id != variantB.id)
-        #expect(item.variants.count == 2)
-    }
-
     // MARK: - Transient fitted preview + cache + save-to-variant (#0066)
 
     /// A 16×16 source into a non-square 64×32 display must produce a
     /// preview sized to the *fit* dimensions (32×32), not the raw display
-    /// dimensions — and, unlike `createFittedVariant`, must not persist a
-    /// `Variant` as a side effect of merely computing the preview.
+    /// dimensions, and must not persist a `Variant` as a side effect of
+    /// merely computing the preview.
     @Test func fittedPreviewReturnsFitDimensionsAndDoesNotPersist() async throws {
         let context = try makeContext()
         let coordinator = try makeCoordinator()

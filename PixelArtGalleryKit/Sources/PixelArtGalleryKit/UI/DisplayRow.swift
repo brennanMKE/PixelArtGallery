@@ -2,7 +2,7 @@ import SwiftUI
 
 /// A single row summarizing a Flaschen Taschen display: name, endpoint, and
 /// resolution. Extracted from ``DisplayRegistryView`` (#0064) so it can be
-/// reused by ``DisplaySendPickerView`` without duplicating the layout.
+/// reused by other display-list surfaces without duplicating the layout.
 struct DisplayRow: View {
     let display: FlaschenTaschenDisplay
 

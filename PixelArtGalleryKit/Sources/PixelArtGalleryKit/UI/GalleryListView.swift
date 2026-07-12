@@ -96,8 +96,8 @@ public struct GalleryListView: View {
                 }
             }
             // GalleryItem is no longer a push destination — tapping a cell
-            // presents GallerySendPopoverView instead (#0067).
-            // GalleryDetailView.swift is retired in #0068, not deleted here.
+            // presents GallerySendPopoverView instead (#0067). GalleryDetailView
+            // was retired entirely in #0068.
             .navigationTitle("Gallery")
             #if os(iOS)
             .toolbarBackground(.hidden, for: .navigationBar)
@@ -259,24 +259,12 @@ public struct GalleryListView: View {
         }
         #endif
 
-        // Variant creation sheet
-        .sheet(isPresented: $coordinator.showVariantCreation) {
-            if let selectedItem = coordinator.selectedItem {
-                VariantCreationView { width, height, associatedDisplayId in
-                    try? await coordinator.createVariant(
-                        for: selectedItem,
-                        width: width,
-                        height: height,
-                        associatedDisplayId: associatedDisplayId
-                    )
-                }
-            }
-        }
         .tint(.pixelAccent)
     }
 
-    /// A tappable grid cell that presents the send popover (#0067) instead of
-    /// pushing `GalleryDetailView`. Factored out of the `ForEach` body (rather
+    /// A tappable grid cell that presents the send popover (#0067) — the sole
+    /// entry point since `GalleryDetailView` was retired in #0068. Factored
+    /// out of the `ForEach` body (rather
     /// than inlined) because the combined `Button` + `.contextMenu` +
     /// `.popover` modifier chain made the surrounding `ForEach` closure too
     /// slow for the type checker to infer in one shot.

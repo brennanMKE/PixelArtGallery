@@ -74,12 +74,8 @@ final class GalleryCoordinator {
     /// (a 45×35 preview is ~6 KB), so no size cap is needed.
     @ObservationIgnored private var previewCache: [FittedPreviewCacheKey: FittedPreview] = [:]
 
-    var selectedItem: GalleryItem?
-    var selectedVariant: Variant?
     var isImporting = false
-    var showNewVariantSheet = false
     var showImagePicker = false
-    var showVariantCreation = false
     var currentError: String?
 
     /// Transient, non-error message surfaced to the user after an import — e.g.
@@ -107,15 +103,6 @@ final class GalleryCoordinator {
     func configure(modelContext: ModelContext) {
         guard self.modelContext !== modelContext else { return }
         self.modelContext = modelContext
-    }
-
-    func selectItem(_ item: GalleryItem) {
-        selectedItem = item
-        selectedVariant = nil
-    }
-
-    func selectVariant(_ variant: Variant) {
-        selectedVariant = variant
     }
 
     /// Create a new gallery item with image data, skipping exact duplicates.
@@ -299,8 +286,8 @@ final class GalleryCoordinator {
     /// Compute (or reuse from cache) a transient, aspect-fit preview of an
     /// item for a display, without persisting anything (#0066).
     ///
-    /// Unlike ``createFittedVariant(for:display:)`` this never inserts or
-    /// saves a ``Variant`` — it exists so the popover flow ([#0067](0067.md))
+    /// This never inserts or saves a ``Variant`` — it exists so the popover
+    /// flow ([#0067](0067.md))
     /// can show the fitted pixelation the moment a display is selected, and
     /// only an explicit ``saveVariant(from:)`` call turns it into a persisted
     /// record.
@@ -375,8 +362,8 @@ final class GalleryCoordinator {
     /// attaches a new `Variant` built directly from the preview's already-
     /// computed pixel data — no re-pixelation.
     ///
-    /// **Dedup key** (moved verbatim from #0063's `createFittedVariant`):
-    /// `associatedDisplayId == preview.displayID && targetWidth == preview.width
+    /// **Dedup key** (moved verbatim from #0063's `createFittedVariant`,
+    /// retired in #0068): `associatedDisplayId == preview.displayID && targetWidth == preview.width
     /// && targetHeight == preview.height`. When several matches exist
     /// (shouldn't normally happen), the most recently created one is returned,
     /// for determinism. Re-saving the same preview is intentionally a no-op —
@@ -437,30 +424,6 @@ final class GalleryCoordinator {
             AppLog.variant.error("Failed to save variant from preview: \(error.localizedDescription, privacy: .public)")
             throw error
         }
-    }
-
-    /// Legacy always-persist path (#0063): compute a fitted preview and
-    /// immediately save it as a `Variant`.
-    ///
-    /// Superseded by ``fittedPreview(for:display:)`` + ``saveVariant(from:)``
-    /// for the popover flow (#0066/#0067), which separates "compute a preview"
-    /// from "the user chose to save it". Kept as a thin wrapper so
-    /// `DisplaySendPickerView`, its sole remaining production call site,
-    /// keeps compiling with identical observable behavior until that view (and
-    /// this wrapper) are retired in #0068.
-    /// - Parameters:
-    ///   - item: The gallery item to fit and pixelate.
-    ///   - display: The Flaschen Taschen display whose geometry the source
-    ///     should be fit into.
-    /// - Returns: The fitted ``Variant``, either newly created or an existing
-    ///   match reused as-is.
-    @discardableResult
-    func createFittedVariant(
-        for item: GalleryItem,
-        display: FlaschenTaschenDisplay
-    ) async throws -> Variant {
-        let preview = try await fittedPreview(for: item, display: display)
-        return try saveVariant(from: preview)
     }
 
     /// Duplicate an existing variant within the same gallery item.
@@ -893,10 +856,6 @@ final class GalleryCoordinator {
         }
 
         let id = item.id
-        if selectedItem?.id == id {
-            selectedItem = nil
-        }
-
         modelContext.delete(item)
         do {
             try modelContext.save()
@@ -925,10 +884,6 @@ final class GalleryCoordinator {
         }
 
         let id = variant.id
-        if selectedVariant?.id == id {
-            selectedVariant = nil
-        }
-
         modelContext.delete(variant)
         do {
             try modelContext.save()

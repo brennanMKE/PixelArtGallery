@@ -114,8 +114,7 @@ nonisolated struct ManualDisplayInput: Equatable {
 /// - **Edit** — fields are prefilled from an existing ``FlaschenTaschenDisplay``
 ///   (including its default paint layer) and the confirm button reads "Save".
 ///
-/// Mirrors ``VariantCreationView`` in style. Validation always goes through
-/// ``ManualDisplayInput`` regardless of mode.
+/// Validation always goes through ``ManualDisplayInput`` regardless of mode.
 struct DisplayEditorView: View {
     /// Which display, if any, is being edited. `add` starts from blank/default
     /// fields; `edit` prefills from the given display and writes back to it.
