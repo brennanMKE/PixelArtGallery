@@ -315,9 +315,14 @@ struct VariantDetailView: View {
         .onChange(of: variant.targetHeight) {
             updateSelectedDisplay()
         }
-        .onChange(of: selectedDisplayID) {
+        .onChange(of: selectedDisplayID) { _, newValue in
             // Reseed layer + offsets from each newly selected display's defaults.
             seedSendDefaults()
+            // Remember the selection as last-used (#0079), mirroring
+            // GallerySendPopoverView, so this screen keeps last-used current too.
+            if let newValue, let display = displays.first(where: { $0.id == newValue }) {
+                coordinator.rememberLastUsedDisplay(display)
+            }
         }
     }
 
@@ -357,6 +362,7 @@ struct VariantDetailView: View {
 
         selectedDisplayID = FlaschenTaschenDisplay.preferredSelection(
             current: selectedDisplayID,
+            lastUsed: coordinator.resolveLastUsedDisplay(among: displays)?.id,
             variantWidth: variant.targetWidth,
             variantHeight: variant.targetHeight,
             among: displays.map { (id: $0.id, source: $0.source, width: $0.displayWidth, height: $0.displayHeight) }

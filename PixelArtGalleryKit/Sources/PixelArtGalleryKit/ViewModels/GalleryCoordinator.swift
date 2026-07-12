@@ -1148,7 +1148,7 @@ final class GalleryCoordinator {
     }
 
     /// Resolve the last-used display among `candidates`, with a fallback
-    /// ladder mirroring ``FlaschenTaschenDisplay/preferredSelection(current:variantWidth:variantHeight:among:)``.
+    /// ladder mirroring ``FlaschenTaschenDisplay/preferredSelection(current:lastUsed:variantWidth:variantHeight:among:)``.
     ///
     /// Reads the stored id and returns the matching candidate; when the
     /// stored value is absent, unparseable, or no longer among `candidates`,

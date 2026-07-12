@@ -143,20 +143,25 @@ public final class FlaschenTaschenDisplay {
     }
 
     /// Pick which display a send picker should select (#0032, extended for
-    /// #0055 with geometry matching).
+    /// #0055 with geometry matching and for #0079 with a last-used tie-break).
     ///
     /// First looks for candidates whose `width × height` exactly equals the
     /// variant's `variantWidth × variantHeight`. Within that match set, keeps
     /// `current` if it already matches (never stomps a still-valid explicit
-    /// choice), otherwise picks the first match in candidate order (the
+    /// choice); otherwise prefers `lastUsed` if it is among the matches
+    /// (#0079 — a fresh open of the screen, where `current` is `nil` or
+    /// stale, prefers the display the user last used over arbitrary list
+    /// order); otherwise picks the first match in candidate order (the
     /// picker's `@Query` is sorted by `displayName`, so this is deterministic).
     /// When nothing matches the variant's dimensions, falls back to the
     /// original #0032 rule: keep a still-valid `current`, else the built-in
     /// default display (`source == defaultSource`), else the first candidate,
-    /// else `nil`. Operates on plain tuples so it is unit-testable without
-    /// SwiftData.
+    /// else `nil` — `lastUsed` deliberately does not participate in this
+    /// fallback ladder. Operates on plain tuples so it is unit-testable
+    /// without SwiftData.
     static func preferredSelection(
         current: UUID?,
+        lastUsed: UUID? = nil,
         variantWidth: Int,
         variantHeight: Int,
         among candidates: [(id: UUID, source: String, width: Int, height: Int)]
@@ -165,6 +170,9 @@ public final class FlaschenTaschenDisplay {
         if !matches.isEmpty {
             if let current, matches.contains(where: { $0.id == current }) {
                 return current
+            }
+            if let lastUsed, matches.contains(where: { $0.id == lastUsed }) {
+                return lastUsed
             }
             return matches.first?.id
         }
