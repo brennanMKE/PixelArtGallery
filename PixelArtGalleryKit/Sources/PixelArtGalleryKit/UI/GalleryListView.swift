@@ -27,10 +27,15 @@ public struct GalleryListView: View {
     @State private var itemToDelete: GalleryItem?
     /// The gallery item whose send popover is presented, if any (#0067).
     @State private var selectedItem: GalleryItem?
+    #if os(iOS)
     /// How far the grid has scrolled, fed to the collapsing
     /// ``GalleryBannerView`` header (#0072). `0` at rest — the header renders
-    /// fully expanded until the user scrolls.
+    /// fully expanded until the user scrolls. iOS only: macOS keeps a static
+    /// expanded header below its title bar/toolbar and never collapses it
+    /// (#0080), so this state would otherwise churn on every scroll frame
+    /// for no visual effect.
     @State private var headerScrollOffset: CGFloat = 0
+    #endif
 
     #if os(iOS)
     /// Whether the in-app Settings sheet is presented, triggered from the
@@ -121,14 +126,23 @@ public struct GalleryListView: View {
                 // (possibly shrunk) height. Avoids a feedback loop
                 // between the shrinking overlay and the content inset.
                 .contentMargins(.top, GalleryHeaderMetrics.expandedHeight, for: .scrollContent)
+                #if os(iOS)
                 .onScrollGeometryChange(for: CGFloat.self) { geometry in
                     geometry.contentOffset.y + geometry.contentInsets.top
                 } action: { _, newValue in
                     headerScrollOffset = newValue
                 }
+                #endif
             }
             .overlay(alignment: .top) {
+                #if os(macOS)
+                // Static expanded header (#0080): macOS has a real title
+                // bar/toolbar above the banner; no collapse. scrollOffset
+                // stays at its default 0.
+                GalleryBannerView()
+                #else
                 GalleryBannerView(scrollOffset: headerScrollOffset)
+                #endif
             }
             #if os(iOS)
             // The bottom bar carries Settings, the large centered `+`, and
@@ -181,6 +195,12 @@ public struct GalleryListView: View {
                     }
                 }
             }
+            // Standard toolbar material even at rest (#0080) — without it the
+            // toolbar is transparent over the vibrant banner scrolled beneath
+            // the title bar, leaving the traffic lights, Sort, and `+`
+            // low-contrast against the busy pixel pattern. Applies to the
+            // whole toolbar, so #0081's future gear inherits it for free.
+            .toolbarBackground(.visible, for: .windowToolbar)
             #endif
 
             // Error alert

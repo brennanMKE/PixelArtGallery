@@ -44,8 +44,8 @@ struct GalleryBannerView: View {
         .frame(height: height)
         .clipped()
         .background(alignment: .top) {
-            // Only the pixel backdrop bleeds under the status bar. A
-            // fixed-size canvas (independent of `height`) so
+            // Only the pixel backdrop bleeds under the status bar, and only
+            // on iOS. A fixed-size canvas (independent of `height`) so
             // `BackgroundPixelsViewModel` never sees its size change during
             // the collapse animation — its regen fires on column/row-count
             // change, and a per-frame height change would visibly
@@ -53,14 +53,20 @@ struct GalleryBannerView: View {
             // itself (cropping it to the header's current bounds) *before*
             // `.ignoresSafeArea` expands the already-cropped container's
             // render bounds up past the status bar — the container bleeds,
-            // layout is unaffected.
+            // layout is unaffected. On macOS the top safe area is the window
+            // title bar/toolbar, not a status bar, so `.ignoresSafeArea` is
+            // gated to iOS only (#0080): the banner stays clipped to its
+            // 128pt band and sits below the title bar instead of bleeding
+            // pixels behind the traffic lights and toolbar controls.
             Color.clear
                 .overlay(alignment: .top) {
                     BackgroundPixelsView(style: .vibrant)
                         .frame(height: 220) // expanded height (128) + generous status-bar allowance; constant.
                 }
                 .clipped()
+                #if os(iOS)
                 .ignoresSafeArea(edges: .top)
+                #endif
         }
         .accessibilityAddTraits(.isHeader)
     }
