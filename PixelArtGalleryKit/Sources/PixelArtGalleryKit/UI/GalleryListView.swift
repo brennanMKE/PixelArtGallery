@@ -29,7 +29,8 @@ public struct GalleryListView: View {
     @State private var selectedItem: GalleryItem?
 
     #if os(iOS)
-    /// Whether the in-app Settings sheet is presented (iOS only; macOS uses the
+    /// Whether the in-app Settings sheet is presented, triggered from the
+    /// gear button in the bottom bar (#0071; iOS only — macOS uses the
     /// standard `Settings` scene instead).
     @State private var showSettings = false
     #endif
@@ -103,6 +104,19 @@ public struct GalleryListView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
+            #if os(iOS)
+            // The bottom bar carries Settings, the large centered `+`, and
+            // Sort on iOS (#0071) — a safe-area inset so the grid's last row
+            // and the empty state both clear the bar rather than sitting
+            // behind it.
+            .safeAreaInset(edge: .bottom) {
+                GalleryBottomBar(
+                    sortOrderRawValue: $sortOrderRawValue,
+                    onAddImage: { coordinator.showImagePicker = true },
+                    onShowSettings: { showSettings = true }
+                )
+            }
+            #endif
             // GalleryItem is no longer a push destination — tapping a cell
             // presents GallerySendPopoverView instead (#0067). GalleryDetailView
             // was retired entirely in #0068.
@@ -111,6 +125,12 @@ public struct GalleryListView: View {
             .navigationBarTitleDisplayMode(.inline) // No large-title gap above the banner.
             .toolbarBackground(.hidden, for: .navigationBar)
             #endif
+            #if os(macOS)
+            // iOS moves these actions into the bottom bar (#0071) — Settings
+            // (gear), Sort, and the large centered `+` — so this toolbar is
+            // macOS-only. macOS keeps its native top toolbar with exactly `+`
+            // and Sort; it never had a Settings button here since it reaches
+            // SettingsView through the app's Settings scene (⌘,).
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button(action: { coordinator.showImagePicker = true }) {
@@ -130,18 +150,8 @@ public struct GalleryListView: View {
                         Label("Sort", systemImage: "arrow.up.arrow.down")
                     }
                 }
-                #if os(iOS)
-                // macOS reaches SettingsView through the app's Settings scene
-                // (⌘,); iOS reaches it through this gear button. Settings is
-                // the single home for display management on both platforms
-                // (#0054) — there is no separate "Displays" destination.
-                ToolbarItem(placement: .secondaryAction) {
-                    Button(action: { showSettings = true }) {
-                        Label("Settings", systemImage: "gearshape")
-                    }
-                }
-                #endif
             }
+            #endif
 
             // Error alert
             .alert("Error", isPresented: Binding(
@@ -259,9 +269,10 @@ public struct GalleryListView: View {
         }
 
         #if os(iOS)
-        // In-app Settings — display management (#0054). SettingsView owns its
-        // own NavigationStack and Done button; macOS gets the standard
-        // Settings scene instead.
+        // In-app Settings — display management (#0054), triggered from the
+        // bottom bar's gear button (#0071). SettingsView owns its own
+        // NavigationStack and Done button; macOS gets the standard Settings
+        // scene instead.
         .sheet(isPresented: $showSettings) {
             SettingsView()
         }
