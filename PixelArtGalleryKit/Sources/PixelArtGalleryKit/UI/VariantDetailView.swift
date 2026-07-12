@@ -27,6 +27,15 @@ struct VariantDetailView: View {
     /// stored defaults (#0056).
     @State private var sendOffsetX: Int = 0
     @State private var sendOffsetY: Int = 0
+    /// Whether the next send converts the variant's pixels to grayscale
+    /// (#0077) — transient, per-send state like layer/offset, no stored
+    /// default in v1. Applied once at payload-build time in
+    /// ``handleSendToDisplay()``; frozen for the duration of a send.
+    @State private var sendGrayscale = false
+    /// Whether the "Advanced" section (x/y offsets + grayscale) is expanded.
+    /// Collapsed by default — these are fine-tuning controls, unlike Layer
+    /// which stays a primary control next to Send.
+    @State private var isAdvancedExpanded = false
     /// The continuous-send loop, extracted to ``FTSendController`` (#0067) so
     /// the same loop (cancellation, mid-send clear-on-change, the #0053
     /// stop-clear) is shared with the send popover's transient-preview send
@@ -229,37 +238,17 @@ struct VariantDetailView: View {
                 }
                 .disabled(isSending)
 
-                // Layer and x/y stay editable during an active send (#0057) —
-                // the send loop reads them live each frame, so a change here
-                // takes effect on the next frame without stopping the send.
-                // Only the display picker is locked while sending.
+                // Layer stays editable during an active send (#0057) — the
+                // send loop reads it live each frame, so a change here takes
+                // effect on the next frame without stopping the send. Kept as
+                // a primary control next to Send (it's the routinely adjusted
+                // FT z-plane); x/y offsets and grayscale live under Advanced
+                // below. Only the display picker is locked while sending.
                 Stepper(value: $sendLayer, in: FlaschenTaschenDisplay.layerRange) {
                     HStack {
                         Text("Layer")
                         Spacer()
                         Text("\(sendLayer)")
-                            .monospacedDigit()
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .disabled(selectedDisplay == nil)
-
-                Stepper(value: $sendOffsetX, in: offsetXRange) {
-                    HStack {
-                        Text("X Offset")
-                        Spacer()
-                        Text("\(sendOffsetX)")
-                            .monospacedDigit()
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .disabled(selectedDisplay == nil)
-
-                Stepper(value: $sendOffsetY, in: offsetYRange) {
-                    HStack {
-                        Text("Y Offset")
-                        Spacer()
-                        Text("\(sendOffsetY)")
                             .monospacedDigit()
                             .foregroundStyle(.secondary)
                     }
@@ -279,6 +268,39 @@ struct VariantDetailView: View {
                 .tint(isSending ? .red : nil)
                 .controlSize(.large)
                 .disabled(selectedDisplay == nil)
+
+                // Fine-tuning controls, collapsed by default (#0077). X/Y stay
+                // live-editable during an active send (#0057) — moving them
+                // here changes layout only, not their binding or disabled
+                // rules. Grayscale is disabled while sending because the
+                // payload's pixel data is frozen at send start, so a mid-send
+                // toggle would silently do nothing until the next send.
+                DisclosureGroup("Advanced", isExpanded: $isAdvancedExpanded) {
+                    Stepper(value: $sendOffsetX, in: offsetXRange) {
+                        HStack {
+                            Text("X Offset")
+                            Spacer()
+                            Text("\(sendOffsetX)")
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .disabled(selectedDisplay == nil)
+
+                    Stepper(value: $sendOffsetY, in: offsetYRange) {
+                        HStack {
+                            Text("Y Offset")
+                            Spacer()
+                            Text("\(sendOffsetY)")
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .disabled(selectedDisplay == nil)
+
+                    Toggle("Grayscale", isOn: $sendGrayscale)
+                        .disabled(selectedDisplay == nil || isSending)
+                }
             }
         }
         .onChange(of: displays.map { "\($0.id)|\($0.displayWidth)x\($0.displayHeight)" }, initial: true) { _, _ in
@@ -412,12 +434,17 @@ struct VariantDetailView: View {
         // the variant's geometry never change once a send starts — only
         // layer/x/y are read live, each frame, via `frameOffset` below (#0057).
         let displayName = display.displayName
+        // Grayscale is a static transform of the frozen pixel data, applied
+        // once here at send start (#0077) — same contract as #0057's
+        // "endpoint + pixel data frozen, only layer/x/y read live per frame."
         let payload = FTSendPayload(
             host: display.host,
             port: display.port,
             width: variant.targetWidth,
             height: variant.targetHeight,
-            pixelGridData: variant.pixelGridData,
+            pixelGridData: sendGrayscale
+                ? PixelGrid.grayscale(rgba8888: variant.pixelGridData)
+                : variant.pixelGridData,
             scaleFactor: variant.scaleFactor
         )
 

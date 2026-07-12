@@ -99,4 +99,41 @@ nonisolated public struct PixelGrid: Equatable, Sendable {
         }
         return PixelGrid(width: width, height: height, colors: rows)
     }
+
+    /// Convert an RGBA8888 buffer to grayscale: each `(r, g, b, a)` pixel
+    /// becomes `(y, y, y, a)` where `y = round(0.299·r + 0.587·g + 0.114·b)` —
+    /// the Rec.601 luminance formula used by ft-swift's `grayscale` demo
+    /// (`Sources/grayscale/Grayscale.swift`), sent over the same P6 PPM wire
+    /// format as an ordinary send. Alpha is preserved; black stays black
+    /// (transparent on FT layers 1–15). Buffer length is unchanged.
+    ///
+    /// Rounding (not truncating) is a deliberate departure from ft-swift's
+    /// truncating `UInt8(...)` cast (which would map pure green to 149) —
+    /// this rounds to 150 per this feature's spec, and rounding is also what
+    /// makes the transform idempotent: an already-gray pixel's weighted sum
+    /// can land a hair under its own value in floating point, and truncating
+    /// would drift it down by 1 on re-application, while rounding maps it
+    /// back to exactly itself. Overflow past 255 is impossible since the
+    /// coefficients sum to exactly 1.0 (white's sum is exactly 255.0).
+    ///
+    /// Operates directly on the raw buffer (no `PixelGrid` round-trip) for
+    /// speed. Any trailing bytes shorter than a full pixel (shouldn't occur
+    /// for a valid grid) are copied through unchanged. Empty `Data` returns
+    /// empty `Data`.
+    public static func grayscale(rgba8888 data: Data) -> Data {
+        var bytes = [UInt8](data)
+        var index = 0
+        while index + Self.bytesPerPixel <= bytes.count {
+            let r = Double(bytes[index])
+            let g = Double(bytes[index + 1])
+            let b = Double(bytes[index + 2])
+            let y = UInt8((0.299 * r + 0.587 * g + 0.114 * b).rounded())
+            bytes[index] = y
+            bytes[index + 1] = y
+            bytes[index + 2] = y
+            // bytes[index + 3] (alpha) is left untouched.
+            index += Self.bytesPerPixel
+        }
+        return Data(bytes)
+    }
 }
