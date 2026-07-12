@@ -62,44 +62,53 @@ public struct GalleryListView: View {
     public var body: some View {
         NavigationStack {
             ZStack {
-                BackgroundPixelsView()
+                // Plain matte behind the banner, grid, and empty state — the
+                // pixel wallpaper is now confined to the banner above (#0070).
+                Color.matteBackground
                     .ignoresSafeArea()
 
-                Group {
-                if galleryItems.isEmpty {
-                    EmptyStateView(
-                        icon: "photo.on.rectangle.angled",
-                        title: "No Gallery Items",
-                        message: "Import an image to start creating pixel art.",
-                        actionLabel: "Import Image",
-                        action: { coordinator.showImagePicker = true },
-                        animatedHero: true
-                    )
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    // Adaptive thumbnail grid: column count reflows with the
-                    // scene width (more columns on a wide Mac window or iPad,
-                    // fewer on iPhone). ScrollView is transparent, so
-                    // BackgroundPixelsView shows through naturally.
-                    ScrollView {
-                        LazyVGrid(
-                            columns: [GridItem(.adaptive(minimum: 150, maximum: 220), spacing: Theme.Spacing.m)],
-                            alignment: .leading,
-                            spacing: Theme.Spacing.m
-                        ) {
-                            ForEach(sortedItems) { item in
-                                galleryCellButton(for: item)
+                VStack(spacing: 0) {
+                    GalleryBannerView()
+
+                    Group {
+                        if galleryItems.isEmpty {
+                            EmptyStateView(
+                                icon: "photo.on.rectangle.angled",
+                                title: "No Gallery Items",
+                                message: "Import an image to start creating pixel art.",
+                                actionLabel: "Import Image",
+                                action: { coordinator.showImagePicker = true },
+                                animatedHero: true
+                            )
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        } else {
+                            // Adaptive thumbnail grid: column count reflows with
+                            // the scene width (more columns on a wide Mac window
+                            // or iPad, fewer on iPhone). Sits on the plain matte
+                            // background above, not the pixel wallpaper.
+                            ScrollView {
+                                LazyVGrid(
+                                    columns: [GridItem(.adaptive(minimum: 150, maximum: 220), spacing: Theme.Spacing.m)],
+                                    alignment: .leading,
+                                    spacing: Theme.Spacing.m
+                                ) {
+                                    ForEach(sortedItems) { item in
+                                        galleryCellButton(for: item)
+                                    }
+                                }
+                                .padding(Theme.Spacing.l)
                             }
                         }
-                        .padding(Theme.Spacing.l)
                     }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
             // GalleryItem is no longer a push destination — tapping a cell
             // presents GallerySendPopoverView instead (#0067). GalleryDetailView
             // was retired entirely in #0068.
-            .navigationTitle("Gallery")
+            .navigationTitle("") // The banner owns the title; no duplicate.
             #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline) // No large-title gap above the banner.
             .toolbarBackground(.hidden, for: .navigationBar)
             #endif
             .toolbar {
@@ -199,7 +208,6 @@ public struct GalleryListView: View {
                 }
             } message: { item in
                 Text("\(item.originalName) and its variants will be deleted — this can't be undone.")
-            }
             }
         }
 

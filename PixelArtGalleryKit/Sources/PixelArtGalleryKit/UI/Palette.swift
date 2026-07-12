@@ -2,7 +2,10 @@ import SwiftUI
 
 /// The vibrant pixel-art palette shared with PixelArtConverter: four saturated
 /// hues used for the animated background, the app accent, and the animated block.
-extension Color {
+/// `nonisolated` (the package default-isolates to `@MainActor`) so these pure
+/// color constants stay reachable from `PixelWallpaperStyle.palette(isDark:)`,
+/// which is itself `nonisolated` for testability off the main actor (#0070).
+nonisolated extension Color {
     static let pixelColor1 = Color(red: 0.969, green: 0.725, blue: 0.0)   // F7B900 gold
     static let pixelColor2 = Color(red: 0.808, green: 0.024, blue: 0.659) // CE06A8 magenta
     static let pixelColor3 = Color(red: 0.035, green: 0.808, blue: 0.027) // 09CE07 green
@@ -25,4 +28,15 @@ extension Color {
 
     func lighter() -> Color { Color.white.mix(with: self, by: 0.35) }
     func darker() -> Color { Color.black.mix(with: self, by: 0.35) }
+
+    /// Plain system background that follows light/dark mode — the matte
+    /// backdrop for content areas (behind the gallery grid/empty state),
+    /// as opposed to the pixel wallpaper used in the banner (#0070).
+    static var matteBackground: Color {
+        #if os(iOS)
+        Color(uiColor: .systemBackground)
+        #else
+        Color(nsColor: .windowBackgroundColor)
+        #endif
+    }
 }
