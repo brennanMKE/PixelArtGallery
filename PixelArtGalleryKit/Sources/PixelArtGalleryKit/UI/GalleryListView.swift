@@ -172,9 +172,10 @@ public struct GalleryListView: View {
             #if os(macOS)
             // iOS moves these actions into the bottom bar (#0071) — Settings
             // (gear), Sort, and the large centered `+` — so this toolbar is
-            // macOS-only. macOS keeps its native top toolbar with exactly `+`
-            // and Sort; it never had a Settings button here since it reaches
-            // SettingsView through the app's Settings scene (⌘,).
+            // macOS-only. macOS keeps its native top toolbar with `+` and
+            // Sort; it used to reach SettingsView only through the app's
+            // Settings scene (⌘,), with no in-window affordance — #0081
+            // added a Settings gear here alongside Sort for discoverability.
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button(action: { coordinator.showImagePicker = true }) {
@@ -192,6 +193,15 @@ public struct GalleryListView: View {
                         }
                     } label: {
                         Label("Sort", systemImage: "arrow.up.arrow.down")
+                    }
+                }
+                // Settings gear (#0081) — opens the app's Settings scene (⌘,
+                // still works), where FT display management lives (#0054).
+                // SettingsLink is the native macOS 14+ way to open the
+                // Settings scene from a view.
+                ToolbarItem(placement: .secondaryAction) {
+                    SettingsLink {
+                        Label("Settings", systemImage: "gearshape")
                     }
                 }
             }
