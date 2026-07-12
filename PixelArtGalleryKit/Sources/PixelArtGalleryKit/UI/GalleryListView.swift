@@ -195,12 +195,15 @@ public struct GalleryListView: View {
                     }
                 }
             }
-            // Standard toolbar material even at rest (#0080) — without it the
-            // toolbar is transparent over the vibrant banner scrolled beneath
-            // the title bar, leaving the traffic lights, Sort, and `+`
-            // low-contrast against the busy pixel pattern. Applies to the
-            // whole toolbar, so #0081's future gear inherits it for free.
-            .toolbarBackground(.visible, for: .windowToolbar)
+            // Opaque toolbar background (#0080, made opaque in #0082) —
+            // without it the toolbar is transparent (or, with the standard
+            // translucent material, lets content/the vibrant banner show
+            // through) over the busy pixel pattern scrolled beneath the
+            // title bar, leaving the traffic lights, Sort, and `+`
+            // low-contrast. `Color.matteBackground` is opaque and follows
+            // light/dark, matching the content matte below the banner.
+            // Applies to the whole toolbar, so #0081's gear inherits it too.
+            .toolbarBackground(Color.matteBackground, for: .windowToolbar)
             #endif
 
             // Error alert
